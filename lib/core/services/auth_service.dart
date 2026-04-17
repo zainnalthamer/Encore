@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthService {
@@ -11,7 +12,10 @@ class AuthService {
   Future<UserCredential> signUp({
     required String email,
     required String password,
+    required String name,
     required String username,
+    required String photoUrl,
+    String bio = '',
   }) async {
     final credential = await _auth.createUserWithEmailAndPassword(
       email: email,
@@ -23,10 +27,30 @@ class AuthService {
       throw Exception('User creation failed');
     }
 
-    await _createUserDocIfNeeded(
-      user: user,
-      username: username,
-    );
+    await _firestore.collection('users').doc(user.uid).set({
+      'uid': user.uid,
+      'email': email,
+      'name': name,
+      'username': username,
+      'displayName': name,
+      'bio': bio.trim(),
+      'photoUrl': photoUrl,
+      'favoriteItemIds': {
+        'movies': [],
+        'shows': [],
+        'books': [],
+        'games': [],
+      },
+      'derivedPreferences': {
+        'favoriteDomains': [],
+        'topGenres': [],
+        'topTags': [],
+      },
+      'onboardingCompleted': false,
+      'authProvider': 'password',
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
 
     return credential;
   }
@@ -42,24 +66,40 @@ class AuthService {
   }
 
   Future<UserCredential> signInWithGoogle() async {
-    final googleUser = await GoogleSignIn.instance.authenticate();
+    if (kIsWeb) {
+      final googleProvider = GoogleAuthProvider();
+      googleProvider.addScope('email');
 
-    final googleAuth = googleUser.authentication;
+      final userCredential = await _auth.signInWithPopup(googleProvider);
+      final user = userCredential.user;
 
-    final credential = GoogleAuthProvider.credential(
-      idToken: googleAuth.idToken,
-    );
+      if (user == null) {
+        throw Exception('Google sign-in failed');
+      }
 
-    final userCredential = await _auth.signInWithCredential(credential);
-    final user = userCredential.user;
+      await _createUserDocIfNeeded(user: user);
+      return userCredential;
+    } else {
+      final GoogleSignInAccount googleUser =
+          await GoogleSignIn.instance.authenticate();
 
-    if (user == null) {
-      throw Exception('Google sign-in failed');
+      final GoogleSignInAuthentication googleAuth =
+          googleUser.authentication;
+
+      final credential = GoogleAuthProvider.credential(
+        idToken: googleAuth.idToken,
+      );
+
+      final userCredential = await _auth.signInWithCredential(credential);
+      final user = userCredential.user;
+
+      if (user == null) {
+        throw Exception('Google sign-in failed');
+      }
+
+      await _createUserDocIfNeeded(user: user);
+      return userCredential;
     }
-
-    await _createUserDocIfNeeded(user: user);
-
-    return userCredential;
   }
 
   Future<void> _createUserDocIfNeeded({
@@ -71,9 +111,12 @@ class AuthService {
 
     if (!snapshot.exists) {
       await userDoc.set({
+        'uid': user.uid,
         'email': user.email ?? '',
+        'name': user.displayName ?? username ?? '',
         'username': username ?? user.displayName ?? '',
         'displayName': user.displayName ?? username ?? '',
+        'bio': '',
         'photoUrl': user.photoURL ?? '',
         'favoriteItemIds': {
           'movies': [],
@@ -96,15 +139,18 @@ class AuthService {
     } else {
       await userDoc.update({
         'email': user.email ?? '',
-        'displayName': user.displayName ?? '',
-        'photoUrl': user.photoURL ?? '',
+        'name': user.displayName ?? snapshot.data()?['name'] ?? '',
+        'displayName': user.displayName ?? snapshot.data()?['displayName'] ?? '',
+        'photoUrl': user.photoURL ?? snapshot.data()?['photoUrl'] ?? '',
         'updatedAt': FieldValue.serverTimestamp(),
       });
     }
   }
 
   Future<void> logout() async {
-    await GoogleSignIn.instance.signOut();
+    if (!kIsWeb) {
+      await GoogleSignIn.instance.signOut();
+    }
     await _auth.signOut();
   }
 }

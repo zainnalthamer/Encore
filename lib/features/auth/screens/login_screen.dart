@@ -1,10 +1,10 @@
-import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/services/auth_service.dart';
+import '../../../core/utils/auth_background.dart';
 import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -22,21 +22,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isLoading = false;
   bool _obscurePassword = true;
-
-  final List<String> _backgrounds = const [
-    'assets/images/auth_bg_1.jpg',
-    'assets/images/auth_bg_2.jpg',
-    'assets/images/auth_bg_3.jpg',
-    'assets/images/auth_bg_4.jpg',
-  ];
-
-  late final String _selectedBackground;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedBackground = _backgrounds[Random().nextInt(_backgrounds.length)];
-  }
 
   Future<void> _login() async {
     FocusScope.of(context).unfocus();
@@ -56,7 +41,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       _showSnackBar(_formatError(e));
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -70,7 +57,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       _showSnackBar(_formatError(e));
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -117,7 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
         fit: StackFit.expand,
         children: [
           Image.asset(
-            _selectedBackground,
+            AuthBackground.getBackground(),
             fit: BoxFit.cover,
           ),
 
@@ -194,6 +183,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   prefixIcon: Icons.alternate_email_rounded,
                                 ),
                                 const SizedBox(height: 14),
+
                                 _ModernAuthField(
                                   controller: _passwordController,
                                   hintText: 'Password',
@@ -260,7 +250,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   ),
                                 ),
-
                                 const SizedBox(height: 18),
 
                                 Row(
@@ -290,7 +279,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   ],
                                 ),
-
                                 const SizedBox(height: 18),
 
                                 SizedBox(
@@ -341,7 +329,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   ),
                                 ),
-
                                 const SizedBox(height: 20),
 
                                 Row(
@@ -354,15 +341,21 @@ class _LoginScreenState extends State<LoginScreen> {
                                         fontSize: 14,
                                       ),
                                     ),
-                                    GestureDetector(
-                                      onTap: () {
-                                        Navigator.push(
-                                          context,
+                                    TextButton(
+                                      onPressed: () {
+                                        Navigator.of(context).push(
                                           MaterialPageRoute(
                                             builder: (_) => const SignupScreen(),
                                           ),
                                         );
                                       },
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Colors.white,
+                                        padding: EdgeInsets.zero,
+                                        minimumSize: const Size(0, 0),
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),
                                       child: Text(
                                         'Sign up',
                                         style: GoogleFonts.inter(
