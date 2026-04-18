@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:encore/features/onboarding/screens/onboarding_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -143,7 +144,12 @@ class _SignupScreenState extends State<SignupScreen> {
       await user.updatePhotoURL(finalAvatar);
 
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const OnboardingScreen(),
+        ),
+      );
       _showSnackBar('Account created');
     } on FirebaseAuthException catch (e) {
       final msg = switch (e.code) {
@@ -239,7 +245,12 @@ class _SignupScreenState extends State<SignupScreen> {
       await user.updatePhotoURL(chosenAvatar);
 
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const OnboardingScreen(),
+        ),
+      );
       _showSnackBar('Signed up with Google');
     } on FirebaseAuthException catch (e) {
       _showSnackBar(e.message ?? 'Google sign-in failed.');
