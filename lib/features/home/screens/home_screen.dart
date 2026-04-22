@@ -19,18 +19,22 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final MediaSeedService _mediaSeedService = MediaSeedService();
   final PageController _heroController = PageController();
+  final ScrollController _scrollController = ScrollController();
 
   bool _loading = true;
+  bool _navScrolled = false;
   String? _error;
   int _heroIndex = 0;
 
   List<String> _topGenres = [];
-  List<String> _topTags = [];
-  List<String> _favoriteDomains = [];
 
   List<OnboardingMediaItem> _popularItems = [];
   List<OnboardingMediaItem> _discoverItems = [];
   List<OnboardingMediaItem> _becauseYouLikedItems = [];
+
+  static const double _heroHeight = 560;
+  static const double _navHeight = 92;
+
   final List<OnboardingMediaItem> _friendPlaceholders = const [
     OnboardingMediaItem(
       id: 'friend_placeholder_1',
@@ -77,10 +81,18 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_handleScroll);
     _loadHomeFeed();
   }
 
-  bool get _isDesktopLike => MediaQuery.sizeOf(context).width >= 980;
+  void _handleScroll() {
+    final scrolled = _scrollController.hasClients && _scrollController.offset > 24;
+    if (scrolled != _navScrolled) {
+      setState(() {
+        _navScrolled = scrolled;
+      });
+    }
+  }
 
   Future<void> _loadHomeFeed() async {
     setState(() {
@@ -117,9 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
 
       setState(() {
-        _favoriteDomains = favoriteDomains;
         _topGenres = topGenres;
-        _topTags = topTags;
         _popularItems = popular;
         _discoverItems = discover;
         _becauseYouLikedItems = becauseYouLiked;
@@ -170,18 +180,31 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<OnboardingMediaItem> _buildPopularItems(List<OnboardingMediaItem> items) {
-    final seen = <String>{};
+    final scored = items.map((item) {
+      var score = 0;
+      if (item.imageUrl.trim().isNotEmpty) score += 20;
+      if (item.description.trim().isNotEmpty) score += 12;
+      if (item.genres.isNotEmpty) score += 6;
+      if (item.domain == 'movies' || item.domain == 'shows') score += 8;
+      return _ScoredItem(item: item, score: score);
+    }).toList();
+
+    scored.sort((a, b) => b.score.compareTo(a.score));
+
+    final seenTitles = <String>{};
     final popular = <OnboardingMediaItem>[];
 
-    for (final item in items) {
-      if (seen.contains(item.id)) continue;
-      if (item.imageUrl.trim().isEmpty) continue;
-      if (item.description.trim().isEmpty) continue;
+    for (final entry in scored) {
+      final item = entry.item;
+      final key = item.title.trim().toLowerCase();
 
-      seen.add(item.id);
+      if (item.imageUrl.trim().isEmpty) continue;
+      if (key.isEmpty || seenTitles.contains(key)) continue;
+
+      seenTitles.add(key);
       popular.add(item);
 
-      if (popular.length >= 6) break;
+      if (popular.length >= 8) break;
     }
 
     return popular;
@@ -361,6 +384,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
     _heroController.dispose();
     super.dispose();
   }
@@ -380,108 +405,100 @@ class _HomeScreenState extends State<HomeScreen> {
               color: const Color(0xFF050507),
             ),
           ),
-
-          if (_loading)
-            const Positioned.fill(
-              child: _HeroLoadingBackdrop(),
-            )
-          else if (_popularItems.isNotEmpty)
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              child: _HeroCarousel(
-                items: _popularItems,
-                heroIndex: _heroIndex,
-                controller: _heroController,
-                onPrevious: _previousHero,
-                onNext: _nextHero,
-                onChanged: (index) {
-                  setState(() {
-                    _heroIndex = index;
-                  });
-                },
-                domainColor: _domainColor,
-                domainIcon: _domainIcon,
-                domainLabel: _domainLabel,
+          SafeArea(
+            child: RefreshIndicator(
+              onRefresh: _loadHomeFeed,
+              color: Colors.white,
+              backgroundColor: const Color(0xFF111111),
+              child: ListView(
+                controller: _scrollController,
+                padding: const EdgeInsets.only(bottom: 120),
+                children: [
+                  if (_loading)
+                    const _HeroLoadingBackdrop()
+                  else if (_popularItems.isNotEmpty)
+                    _HeroCarousel(
+                      items: _popularItems,
+                      heroIndex: _heroIndex,
+                      controller: _heroController,
+                      onPrevious: _previousHero,
+                      onNext: _nextHero,
+                      onChanged: (index) {
+                        setState(() {
+                          _heroIndex = index;
+                        });
+                      },
+                      domainColor: _domainColor,
+                      domainIcon: _domainIcon,
+                      domainLabel: _domainLabel,
+                    ),
+                  if (_loading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 20),
+                      child: _HomeLoadingState(),
+                    )
+                  else if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: _ErrorCard(
+                        message: _error!,
+                        onRetry: _loadHomeFeed,
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 24),
+                          const _SectionTitle(
+                            title: 'Discover',
+                            actionLabel: 'See all',
+                          ),
+                          const SizedBox(height: 14),
+                          _PosterRow(
+                            items: _discoverItems,
+                            domainColor: _domainColor,
+                            domainIcon: _domainIcon,
+                            domainLabel: _domainLabel,
+                          ),
+                          const SizedBox(height: 30),
+                          _SectionTitle(
+                            title: becauseTitle,
+                            actionLabel: 'See all',
+                          ),
+                          const SizedBox(height: 14),
+                          _PosterRow(
+                            items: _becauseYouLikedItems,
+                            domainColor: _domainColor,
+                            domainIcon: _domainIcon,
+                            domainLabel: _domainLabel,
+                          ),
+                          const SizedBox(height: 30),
+                          const _SectionTitle(
+                            title: 'New from friends',
+                            actionLabel: 'See all',
+                          ),
+                          const SizedBox(height: 14),
+                          _FriendsPlaceholderRow(
+                            items: _friendPlaceholders,
+                            domainIcon: _domainIcon,
+                            domainColor: _domainColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             ),
-
+          ),
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: _FadedTopNav(),
-          ),
-
-          Positioned.fill(
-            child: SafeArea(
-              child: RefreshIndicator(
-                onRefresh: _loadHomeFeed,
-                color: Colors.white,
-                backgroundColor: const Color(0xFF111111),
-                child: ListView(
-                  padding: const EdgeInsets.only(top: 500, bottom: 120),
-                  children: [
-                    if (_loading)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 20),
-                        child: _HomeLoadingState(),
-                      )
-                    else if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: _ErrorCard(
-                          message: _error!,
-                          onRetry: _loadHomeFeed,
-                        ),
-                      )
-                    else
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const _SectionTitle(
-                              title: 'Discover',
-                              actionLabel: 'See all',
-                            ),
-                            const SizedBox(height: 14),
-                            _PosterRow(
-                              items: _discoverItems,
-                              domainColor: _domainColor,
-                              domainIcon: _domainIcon,
-                              domainLabel: _domainLabel,
-                            ),
-                            const SizedBox(height: 30),
-                            _SectionTitle(
-                              title: becauseTitle,
-                              actionLabel: 'See all',
-                            ),
-                            const SizedBox(height: 14),
-                            _PosterRow(
-                              items: _becauseYouLikedItems,
-                              domainColor: _domainColor,
-                              domainIcon: _domainIcon,
-                              domainLabel: _domainLabel,
-                            ),
-                            const SizedBox(height: 30),
-                            const _SectionTitle(
-                              title: 'New from friends',
-                              actionLabel: 'See all',
-                            ),
-                            const SizedBox(height: 14),
-                            _FriendsPlaceholderRow(
-                              items: _friendPlaceholders,
-                              domainIcon: _domainIcon,
-                              domainColor: _domainColor,
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+            child: _FadedTopNav(
+              scrolled: _navScrolled,
             ),
           ),
         ],
@@ -517,23 +534,32 @@ class _ScoredItem {
 }
 
 class _FadedTopNav extends StatelessWidget {
+  final bool scrolled;
+
+  const _FadedTopNav({
+    required this.scrolled,
+  });
+
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
       ignoring: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(22, 18, 22, 20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        height: _HomeScreenState._navHeight,
+        padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.black.withOpacity(0.92),
-              Colors.black.withOpacity(0.68),
-              Colors.black.withOpacity(0.28),
-              Colors.transparent,
+              Colors.black.withOpacity(scrolled ? 0.95 : 0.85),
+              Colors.black.withOpacity(scrolled ? 0.75 : 0.55),
+              Colors.black.withOpacity(scrolled ? 0.35 : 0.20),
+              Colors.transparent, // IMPORTANT: full transparent at bottom
             ],
-            stops: const [0.0, 0.38, 0.72, 1.0],
+            stops: const [0.0, 0.4, 0.75, 1.0],
           ),
         ),
         child: SafeArea(
@@ -552,7 +578,7 @@ class _FadedTopNav extends StatelessWidget {
               const Spacer(),
               const _NavItem(label: 'Home', active: true),
               const SizedBox(width: 24),
-              const _NavItem(label: 'Library'),
+              const _NavItem(label: 'Discover'),
               const SizedBox(width: 24),
               const _NavItem(label: 'Profile'),
             ],
@@ -628,164 +654,162 @@ class _HeroCarousel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final item = items[heroIndex];
+    final color = domainColor(item.domain);
+
     return SizedBox(
-      height: 560,
+      height: _HomeScreenState._heroHeight,
       child: Stack(
         children: [
-          NotificationListener<ScrollNotification>(
-            onNotification: (_) => true,
-            child: PageView.builder(
-              physics: const NeverScrollableScrollPhysics(),
-              controller: controller,
-              itemCount: items.length,
-              onPageChanged: onChanged,
-              itemBuilder: (context, index) {
-                final item = items[index];
-                final color = domainColor(item.domain);
-
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (item.imageUrl.trim().isNotEmpty)
-                      Image.network(
-                        item.imageUrl,
-                        fit: BoxFit.cover,
-                        filterQuality: FilterQuality.high,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: const Color(0xFF111114),
-                        ),
-                      )
-                    else
-                      Container(
+          PageView.builder(
+            physics: const NeverScrollableScrollPhysics(),
+            controller: controller,
+            itemCount: items.length,
+            onPageChanged: onChanged,
+            itemBuilder: (context, index) {
+              final current = items[index];
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (current.imageUrl.trim().isNotEmpty)
+                    Image.network(
+                      current.imageUrl,
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.high,
+                      errorBuilder: (_, __, ___) => Container(
                         color: const Color(0xFF111114),
                       ),
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.black.withOpacity(0.88),
-                              Colors.black.withOpacity(0.34),
-                              Colors.black.withOpacity(0.42),
-                              Colors.black.withOpacity(0.94),
-                            ],
-                            stops: const [0.0, 0.22, 0.58, 1.0],
-                          ),
+                    )
+                  else
+                    Container(
+                      color: const Color(0xFF111114),
+                    ),
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withOpacity(0.88),
+                            Colors.black.withOpacity(0.34),
+                            Colors.black.withOpacity(0.42),
+                            Colors.black.withOpacity(0.96),
+                          ],
+                          stops: const [0.0, 0.22, 0.58, 1.0],
                         ),
                       ),
                     ),
-                    Positioned(
-                      left: 28,
-                      right: 28,
-                      bottom: 70,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 780),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                  ),
+                ],
+              );
+            },
+          ),
+          Positioned(
+            left: 28,
+            right: 28,
+            bottom: 70,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 780),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          'POPULAR',
+                          style: GoogleFonts.inter(
+                            color: Colors.black,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.15,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.16),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: color.withOpacity(0.48),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 7,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    'POPULAR',
-                                    style: GoogleFonts.inter(
-                                      color: Colors.black,
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: 1.15,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 7,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: color.withOpacity(0.16),
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: color.withOpacity(0.48),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        domainIcon(item.domain),
-                                        color: color,
-                                        size: 13,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        domainLabel(item.domain).toUpperCase(),
-                                        style: GoogleFonts.inter(
-                                          color: color,
-                                          fontSize: 10.8,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 1.0,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                            Icon(
+                              domainIcon(item.domain),
+                              color: color,
+                              size: 13,
                             ),
-                            const SizedBox(height: 14),
+                            const SizedBox(width: 6),
                             Text(
-                              item.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
+                              domainLabel(item.domain).toUpperCase(),
                               style: GoogleFonts.inter(
-                                color: Colors.white,
-                                fontSize: 40,
+                                color: color,
+                                fontSize: 10.8,
                                 fontWeight: FontWeight.w800,
-                                letterSpacing: -1.3,
-                                height: 0.98,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              item.genres.isEmpty
-                                  ? 'Genres: Curated'
-                                  : 'Genres: ${item.genres.take(3).join(', ')}',
-                              style: GoogleFonts.inter(
-                                color: Colors.white.withOpacity(0.78),
-                                fontSize: 14.2,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              item.description.trim().isEmpty
-                                  ? 'A standout title from the current popular feed.'
-                                  : item.description,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
-                                color: Colors.white.withOpacity(0.86),
-                                fontSize: 14.6,
-                                height: 1.6,
+                                letterSpacing: 1.0,
                               ),
                             ),
                           ],
                         ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 40,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -1.3,
+                      height: 0.98,
                     ),
-                  ],
-                );
-              },
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    item.genres.isEmpty
+                        ? 'Genres: Curated'
+                        : 'Genres: ${item.genres.take(3).join(', ')}',
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.78),
+                      fontSize: 14.2,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    item.description.trim().isEmpty
+                        ? 'A standout title from the current popular feed.'
+                        : item.description,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.86),
+                      fontSize: 14.6,
+                      height: 1.6,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           Positioned(
@@ -936,8 +960,10 @@ class _PosterRow extends StatelessWidget {
     if (items.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
-      height: 318,
+      height: 336,
       child: ListView.separated(
+        clipBehavior: Clip.none,
+        padding: const EdgeInsets.only(top: 8, bottom: 12),
         scrollDirection: Axis.horizontal,
         itemCount: items.length,
         separatorBuilder: (_, __) => const SizedBox(width: 16),
@@ -979,97 +1005,106 @@ class _PosterCardState extends State<_PosterCard> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedContainer(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: _hovered ? -6 : 0),
         duration: const Duration(milliseconds: 180),
-        width: 196,
-        transform: Matrix4.identity()..translate(0.0, _hovered ? -3.0 : 0.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (widget.item.imageUrl.trim().isNotEmpty)
-                      Image.network(
-                        widget.item.imageUrl,
-                        fit: BoxFit.cover,
-                        filterQuality: FilterQuality.medium,
-                        errorBuilder: (_, __, ___) => Container(
+        curve: Curves.easeOutCubic,
+        builder: (context, offset, child) {
+          return Transform.translate(
+            offset: Offset(0, offset),
+            child: child,
+          );
+        },
+        child: SizedBox(
+          width: 196,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (widget.item.imageUrl.trim().isNotEmpty)
+                        Image.network(
+                          widget.item.imageUrl,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.medium,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: Colors.white.withOpacity(0.05),
+                          ),
+                        )
+                      else
+                        Container(
                           color: Colors.white.withOpacity(0.05),
                         ),
-                      )
-                    else
-                      Container(
-                        color: Colors.white.withOpacity(0.05),
-                      ),
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withOpacity(0.08),
-                              Colors.black.withOpacity(0.66),
-                            ],
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                Colors.black.withOpacity(0.08),
+                                Colors.black.withOpacity(0.66),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    Positioned(
-                      top: 10,
-                      left: 10,
-                      child: Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.34),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          widget.domainIcon(widget.item.domain),
-                          color: Colors.white,
-                          size: 18,
+                      Positioned(
+                        top: 10,
+                        left: 10,
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.34),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            widget.domainIcon(widget.item.domain),
+                            color: Colors.white,
+                            size: 18,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              widget.item.title,
-              maxLines: 3,
-              softWrap: true,
-              overflow: TextOverflow.visible,
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                height: 1.22,
-                letterSpacing: -0.2,
+              const SizedBox(height: 10),
+              Text(
+                widget.item.title,
+                maxLines: 3,
+                softWrap: true,
+                overflow: TextOverflow.visible,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  height: 1.22,
+                  letterSpacing: -0.2,
+                ),
               ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              widget.item.genres.isNotEmpty
-                  ? widget.item.genres.take(2).join(' · ')
-                  : widget.domainLabel(widget.item.domain),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                color: Colors.white.withOpacity(0.60),
-                fontSize: 12.8,
-                fontWeight: FontWeight.w500,
-                height: 1.4,
+              const SizedBox(height: 5),
+              Text(
+                widget.item.genres.isNotEmpty
+                    ? widget.item.genres.take(2).join(' · ')
+                    : widget.domainLabel(widget.item.domain),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: Colors.white.withOpacity(0.60),
+                  fontSize: 12.8,
+                  fontWeight: FontWeight.w500,
+                  height: 1.4,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1154,6 +1189,178 @@ class _FriendsPlaceholderRow extends StatelessWidget {
   }
 }
 
+class _HeroLoadingBackdrop extends StatelessWidget {
+  const _HeroLoadingBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: _HomeScreenState._heroHeight,
+      child: Container(
+        color: const Color(0xFF111114),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(
+                width: 48,
+                height: 48,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Color(0xFFFFA362),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Loading your feed...',
+                style: GoogleFonts.inter(
+                  color: Colors.white.withOpacity(0.60),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeLoadingState extends StatelessWidget {
+  const _HomeLoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 24),
+        _shimmerBox(width: double.infinity, height: 32),
+        const SizedBox(height: 14),
+        _shimmerBox(width: 120, height: 20),
+        const SizedBox(height: 14),
+        SizedBox(
+          height: 336,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: 4,
+            separatorBuilder: (_, __) => const SizedBox(width: 16),
+            itemBuilder: (_, __) => _shimmerBox(width: 196, height: 336),
+          ),
+        ),
+        const SizedBox(height: 30),
+        _shimmerBox(width: double.infinity, height: 32),
+        const SizedBox(height: 14),
+        _shimmerBox(width: 120, height: 20),
+        const SizedBox(height: 14),
+        SizedBox(
+          height: 336,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: 4,
+            separatorBuilder: (_, __) => const SizedBox(width: 16),
+            itemBuilder: (_, __) => _shimmerBox(width: 196, height: 336),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _shimmerBox({required double width, required double height}) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(16),
+      ),
+    );
+  }
+}
+
+class _ErrorCard extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _ErrorCard({
+    required this.message,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.red.withOpacity(0.08),
+        border: Border.all(
+          color: Colors.red.withOpacity(0.24),
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.error_outline_rounded,
+                color: Colors.red.withOpacity(0.70),
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Unable to load feed',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            message,
+            style: GoogleFonts.inter(
+              color: Colors.white.withOpacity(0.70),
+              fontSize: 13.5,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: onRetry,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFA362),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 10,
+              ),
+            ),
+            child: Text(
+              'Try Again',
+              style: GoogleFonts.inter(
+                color: Colors.black,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AiCornerButton extends StatefulWidget {
   final VoidCallback onTap;
 
@@ -1177,7 +1384,7 @@ class _AiCornerButtonState extends State<_AiCornerButton> {
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
-          width: 58,
+                    width: 58,
           height: 58,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
@@ -1199,127 +1406,6 @@ class _AiCornerButtonState extends State<_AiCornerButton> {
             Icons.auto_awesome_rounded,
             color: Color(0xFFFFA362),
             size: 24,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HeroLoadingBackdrop extends StatelessWidget {
-  const _HeroLoadingBackdrop();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 560,
-      color: Colors.white.withOpacity(0.04),
-    );
-  }
-}
-
-class _HomeLoadingState extends StatelessWidget {
-  const _HomeLoadingState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: List.generate(
-        3,
-        (index) => Padding(
-          padding: const EdgeInsets.only(bottom: 28),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 220,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              SizedBox(
-                height: 318,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: 4,
-                  separatorBuilder: (_, __) => const SizedBox(width: 16),
-                  itemBuilder: (_, __) {
-                    return Container(
-                      width: 196,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorCard extends StatelessWidget {
-  final String message;
-  final Future<void> Function() onRetry;
-
-  const _ErrorCard({
-    required this.message,
-    required this.onRetry,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(28),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF3A0F18).withOpacity(0.55),
-            borderRadius: BorderRadius.circular(28),
-          ),
-          child: Column(
-            children: [
-              const Icon(
-                Icons.error_outline_rounded,
-                color: Color(0xFFFFB7C5),
-                size: 30,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w500,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: onRetry,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: const Text('Retry'),
-              ),
-            ],
           ),
         ),
       ),
