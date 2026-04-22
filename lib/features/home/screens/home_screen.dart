@@ -31,6 +31,48 @@ class _HomeScreenState extends State<HomeScreen> {
   List<OnboardingMediaItem> _popularItems = [];
   List<OnboardingMediaItem> _discoverItems = [];
   List<OnboardingMediaItem> _becauseYouLikedItems = [];
+  final List<OnboardingMediaItem> _friendPlaceholders = const [
+    OnboardingMediaItem(
+      id: 'friend_placeholder_1',
+      title: 'Friends activity coming soon',
+      domain: 'shows',
+      genres: ['Social'],
+      tags: ['Placeholder'],
+      imageUrl: '',
+      source: 'local',
+      description: 'This section will show what your friends recently added.',
+    ),
+    OnboardingMediaItem(
+      id: 'friend_placeholder_2',
+      title: 'Shared shelves will appear here',
+      domain: 'books',
+      genres: ['Community'],
+      tags: ['Placeholder'],
+      imageUrl: '',
+      source: 'local',
+      description: 'Shared shelves and notes will appear here later.',
+    ),
+    OnboardingMediaItem(
+      id: 'friend_placeholder_3',
+      title: 'Recent entries from friends',
+      domain: 'movies',
+      genres: ['Placeholder'],
+      tags: ['Placeholder'],
+      imageUrl: '',
+      source: 'local',
+      description: 'You will be able to see recent friend activity here.',
+    ),
+    OnboardingMediaItem(
+      id: 'friend_placeholder_4',
+      title: 'Reactions and likes later',
+      domain: 'games',
+      genres: ['Placeholder'],
+      tags: ['Placeholder'],
+      imageUrl: '',
+      source: 'local',
+      description: 'Likes, reactions, and activity updates will go here.',
+    ),
+  ];
 
   @override
   void initState() {
@@ -58,6 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final topTags = preferences.topTags;
 
       final popular = _buildPopularItems(fetchedItems);
+
       final scored = _scoreItems(
         fetchedItems,
         favoriteDomains: favoriteDomains,
@@ -324,105 +367,127 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final desktopLike = _isDesktopLike;
     final becauseTitle = _topGenres.isEmpty
         ? 'Because you like these'
         : 'Because you like ${_topGenres.first}';
 
     return Scaffold(
-      backgroundColor: const Color(0xFF060608),
+      backgroundColor: const Color(0xFF050507),
       body: Stack(
         children: [
           Positioned.fill(
             child: Container(
-              color: const Color(0xFF060608),
+              color: const Color(0xFF050507),
             ),
           ),
-          Positioned(
-            top: -120,
-            right: -40,
-            child: IgnorePointer(
-              child: Container(
-                width: 260,
-                height: 260,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFFFF8B3D).withOpacity(0.10),
-                ),
+
+          if (_loading)
+            const Positioned.fill(
+              child: _HeroLoadingBackdrop(),
+            )
+          else if (_popularItems.isNotEmpty)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: _HeroCarousel(
+                items: _popularItems,
+                heroIndex: _heroIndex,
+                controller: _heroController,
+                onPrevious: _previousHero,
+                onNext: _nextHero,
+                onChanged: (index) {
+                  setState(() {
+                    _heroIndex = index;
+                  });
+                },
+                domainColor: _domainColor,
+                domainIcon: _domainIcon,
+                domainLabel: _domainLabel,
               ),
             ),
+
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _FadedTopNav(),
           ),
-          SafeArea(
-            child: RefreshIndicator(
-              onRefresh: _loadHomeFeed,
-              color: Colors.white,
-              backgroundColor: const Color(0xFF111111),
-              child: ListView(
-                padding: EdgeInsets.fromLTRB(
-                  desktopLike ? 34 : 20,
-                  desktopLike ? 18 : 18,
-                  desktopLike ? 34 : 20,
-                  110,
-                ),
-                children: [
-                  _FadedTopNav(),
-                  const SizedBox(height: 20),
-                  if (_loading)
-                    const _HomeLoadingState()
-                  else if (_error != null)
-                    _ErrorCard(
-                      message: _error!,
-                      onRetry: _loadHomeFeed,
-                    )
-                  else ...[
-                    _HeroCarousel(
-                      items: _popularItems,
-                      heroIndex: _heroIndex,
-                      controller: _heroController,
-                      onPrevious: _previousHero,
-                      onNext: _nextHero,
-                      onChanged: (index) {
-                        setState(() {
-                          _heroIndex = index;
-                        });
-                      },
-                      domainColor: _domainColor,
-                      domainIcon: _domainIcon,
-                      domainLabel: _domainLabel,
-                    ),
-                    const SizedBox(height: 28),
-                    const _SectionTitle(
-                      title: 'Discover',
-                      actionLabel: 'See all',
-                    ),
-                    const SizedBox(height: 14),
-                    _PosterRow(
-                      items: _discoverItems,
-                      domainColor: _domainColor,
-                      domainIcon: _domainIcon,
-                      domainLabel: _domainLabel,
-                    ),
-                    const SizedBox(height: 30),
-                    _SectionTitle(
-                      title: becauseTitle,
-                      actionLabel: 'See all',
-                    ),
-                    const SizedBox(height: 14),
-                    _PosterRow(
-                      items: _becauseYouLikedItems,
-                      domainColor: _domainColor,
-                      domainIcon: _domainIcon,
-                      domainLabel: _domainLabel,
-                    ),
+
+          Positioned.fill(
+            child: SafeArea(
+              child: RefreshIndicator(
+                onRefresh: _loadHomeFeed,
+                color: Colors.white,
+                backgroundColor: const Color(0xFF111111),
+                child: ListView(
+                  padding: const EdgeInsets.only(top: 500, bottom: 120),
+                  children: [
+                    if (_loading)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 20),
+                        child: _HomeLoadingState(),
+                      )
+                    else if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: _ErrorCard(
+                          message: _error!,
+                          onRetry: _loadHomeFeed,
+                        ),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const _SectionTitle(
+                              title: 'Discover',
+                              actionLabel: 'See all',
+                            ),
+                            const SizedBox(height: 14),
+                            _PosterRow(
+                              items: _discoverItems,
+                              domainColor: _domainColor,
+                              domainIcon: _domainIcon,
+                              domainLabel: _domainLabel,
+                            ),
+                            const SizedBox(height: 30),
+                            _SectionTitle(
+                              title: becauseTitle,
+                              actionLabel: 'See all',
+                            ),
+                            const SizedBox(height: 14),
+                            _PosterRow(
+                              items: _becauseYouLikedItems,
+                              domainColor: _domainColor,
+                              domainIcon: _domainIcon,
+                              domainLabel: _domainLabel,
+                            ),
+                            const SizedBox(height: 30),
+                            const _SectionTitle(
+                              title: 'New from friends',
+                              actionLabel: 'See all',
+                            ),
+                            const SizedBox(height: 14),
+                            _FriendsPlaceholderRow(
+                              items: _friendPlaceholders,
+                              domainIcon: _domainIcon,
+                              domainColor: _domainColor,
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
-                ],
+                ),
               ),
             ),
           ),
         ],
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: _AiPillButton(
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: _AiCornerButton(
         onTap: _openAiPanel,
       ),
     );
@@ -454,22 +519,25 @@ class _ScoredItem {
 class _FadedTopNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(26),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withOpacity(0.07),
-                Colors.white.withOpacity(0.03),
-              ],
-            ),
+    return IgnorePointer(
+      ignoring: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(22, 18, 22, 20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withOpacity(0.92),
+              Colors.black.withOpacity(0.68),
+              Colors.black.withOpacity(0.28),
+              Colors.transparent,
+            ],
+            stops: const [0.0, 0.38, 0.72, 1.0],
           ),
+        ),
+        child: SafeArea(
+          bottom: false,
           child: Row(
             children: [
               Text(
@@ -517,13 +585,13 @@ class _NavItemState extends State<_NavItem> {
         ? Colors.white
         : _hovered
             ? Colors.white
-            : Colors.white.withOpacity(0.68);
+            : Colors.white.withOpacity(0.70);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedDefaultTextStyle(
-        duration: const Duration(milliseconds: 160),
+        duration: const Duration(milliseconds: 140),
         style: GoogleFonts.inter(
           color: color,
           fontSize: 14.5,
@@ -560,10 +628,8 @@ class _HeroCarousel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (items.isEmpty) return const SizedBox.shrink();
-
     return SizedBox(
-      height: 470,
+      height: 560,
       child: Stack(
         children: [
           NotificationListener<ScrollNotification>(
@@ -577,159 +643,153 @@ class _HeroCarousel extends StatelessWidget {
                 final item = items[index];
                 final color = domainColor(item.domain);
 
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(34),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (item.imageUrl.trim().isNotEmpty)
-                        Image.network(
-                          item.imageUrl,
-                          fit: BoxFit.cover,
-                          filterQuality: FilterQuality.high,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: const Color(0xFF111114),
-                          ),
-                        )
-                      else
-                        Container(
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (item.imageUrl.trim().isNotEmpty)
+                      Image.network(
+                        item.imageUrl,
+                        fit: BoxFit.cover,
+                        filterQuality: FilterQuality.high,
+                        errorBuilder: (_, __, ___) => Container(
                           color: const Color(0xFF111114),
                         ),
-                      Positioned.fill(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.black.withOpacity(0.72),
-                                Colors.black.withOpacity(0.18),
-                                Colors.black.withOpacity(0.45),
-                                Colors.black.withOpacity(0.92),
-                              ],
-                              stops: const [0.0, 0.22, 0.58, 1.0],
-                            ),
+                      )
+                    else
+                      Container(
+                        color: const Color(0xFF111114),
+                      ),
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withOpacity(0.88),
+                              Colors.black.withOpacity(0.34),
+                              Colors.black.withOpacity(0.42),
+                              Colors.black.withOpacity(0.94),
+                            ],
+                            stops: const [0.0, 0.22, 0.58, 1.0],
                           ),
                         ),
                       ),
-                      Positioned(
-                        top: 22,
-                        left: 22,
-                        child: Row(
+                    ),
+                    Positioned(
+                      left: 28,
+                      right: 28,
+                      bottom: 70,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 780),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                'POPULAR',
-                                style: GoogleFonts.inter(
-                                  color: Colors.black,
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1.2,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: color.withOpacity(0.16),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: color.withOpacity(0.50),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    domainIcon(item.domain),
-                                    color: color,
-                                    size: 13,
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 7,
                                   ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    domainLabel(item.domain).toUpperCase(),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    'POPULAR',
                                     style: GoogleFonts.inter(
-                                      color: color,
-                                      fontSize: 10.8,
+                                      color: Colors.black,
+                                      fontSize: 10.5,
                                       fontWeight: FontWeight.w800,
-                                      letterSpacing: 1.0,
+                                      letterSpacing: 1.15,
                                     ),
                                   ),
-                                ],
+                                ),
+                                const SizedBox(width: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 7,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: color.withOpacity(0.16),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: color.withOpacity(0.48),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        domainIcon(item.domain),
+                                        color: color,
+                                        size: 13,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        domainLabel(item.domain).toUpperCase(),
+                                        style: GoogleFonts.inter(
+                                          color: color,
+                                          fontSize: 10.8,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 1.0,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            Text(
+                              item.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 40,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -1.3,
+                                height: 0.98,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              item.genres.isEmpty
+                                  ? 'Genres: Curated'
+                                  : 'Genres: ${item.genres.take(3).join(', ')}',
+                              style: GoogleFonts.inter(
+                                color: Colors.white.withOpacity(0.78),
+                                fontSize: 14.2,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              item.description.trim().isEmpty
+                                  ? 'A standout title from the current popular feed.'
+                                  : item.description,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                color: Colors.white.withOpacity(0.86),
+                                fontSize: 14.6,
+                                height: 1.6,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      Positioned(
-                        left: 26,
-                        right: 26,
-                        bottom: 52,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 760),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.inter(
-                                  color: Colors.white,
-                                  fontSize: 38,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -1.3,
-                                  height: 0.98,
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                item.genres.isEmpty
-                                    ? 'Genres: Curated'
-                                    : 'Genres: ${item.genres.take(3).join(', ')}',
-                                style: GoogleFonts.inter(
-                                  color: Colors.white.withOpacity(0.78),
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                item.description.trim().isEmpty
-                                    ? 'A standout title from the current popular feed.'
-                                    : item.description,
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.inter(
-                                  color: Colors.white.withOpacity(0.86),
-                                  fontSize: 14.5,
-                                  height: 1.58,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 );
               },
             ),
           ),
           Positioned(
-            left: 16,
+            left: 18,
             top: 0,
             bottom: 0,
             child: Center(
@@ -740,7 +800,7 @@ class _HeroCarousel extends StatelessWidget {
             ),
           ),
           Positioned(
-            right: 16,
+            right: 18,
             top: 0,
             bottom: 0,
             child: Center(
@@ -753,7 +813,7 @@ class _HeroCarousel extends StatelessWidget {
           Positioned(
             left: 0,
             right: 0,
-            bottom: 18,
+            bottom: 22,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(items.length, (index) {
@@ -801,15 +861,12 @@ class _HeroArrowButtonState extends State<_HeroArrowButton> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+        duration: const Duration(milliseconds: 150),
         width: 46,
         height: 46,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.black.withOpacity(_hovered ? 0.48 : 0.30),
-          border: Border.all(
-            color: Colors.white.withOpacity(_hovered ? 0.18 : 0.08),
-          ),
+          color: Colors.black.withOpacity(_hovered ? 0.48 : 0.28),
         ),
         child: IconButton(
           onPressed: widget.onTap,
@@ -879,7 +936,7 @@ class _PosterRow extends StatelessWidget {
     if (items.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
-      height: 320,
+      height: 318,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: items.length,
@@ -919,33 +976,19 @@ class _PosterCardState extends State<_PosterCard> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = widget.domainColor(widget.item.domain);
-
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+        duration: const Duration(milliseconds: 180),
         width: 196,
-        transform: Matrix4.identity()..translate(0.0, _hovered ? -4.0 : 0.0),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: _hovered
-              ? [
-                  BoxShadow(
-                    color: accent.withOpacity(0.16),
-                    blurRadius: 18,
-                    offset: const Offset(0, 10),
-                  ),
-                ]
-              : null,
-        ),
+        transform: Matrix4.identity()..translate(0.0, _hovered ? -3.0 : 0.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(24),
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -989,7 +1032,7 @@ class _PosterCardState extends State<_PosterCard> {
                         ),
                         child: Icon(
                           widget.domainIcon(widget.item.domain),
-                          color: accent,
+                          color: Colors.white,
                           size: 18,
                         ),
                       ),
@@ -1002,8 +1045,8 @@ class _PosterCardState extends State<_PosterCard> {
             Text(
               widget.item.title,
               maxLines: 3,
-              overflow: TextOverflow.visible,
               softWrap: true,
+              overflow: TextOverflow.visible,
               style: GoogleFonts.inter(
                 color: Colors.white,
                 fontSize: 15,
@@ -1033,18 +1076,96 @@ class _PosterCardState extends State<_PosterCard> {
   }
 }
 
-class _AiPillButton extends StatefulWidget {
+class _FriendsPlaceholderRow extends StatelessWidget {
+  final List<OnboardingMediaItem> items;
+  final IconData Function(String) domainIcon;
+  final Color Function(String) domainColor;
+
+  const _FriendsPlaceholderRow({
+    required this.items,
+    required this.domainIcon,
+    required this.domainColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 220,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: items.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 16),
+        itemBuilder: (context, index) {
+          final item = items[index];
+          final color = domainColor(item.domain);
+
+          return Container(
+            width: 220,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.34),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    domainIcon(item.domain),
+                    color: color,
+                    size: 20,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  item.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  item.description,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    color: Colors.white.withOpacity(0.60),
+                    fontSize: 13,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AiCornerButton extends StatefulWidget {
   final VoidCallback onTap;
 
-  const _AiPillButton({
+  const _AiCornerButton({
     required this.onTap,
   });
 
   @override
-  State<_AiPillButton> createState() => _AiPillButtonState();
+  State<_AiCornerButton> createState() => _AiCornerButtonState();
 }
 
-class _AiPillButtonState extends State<_AiPillButton> {
+class _AiCornerButtonState extends State<_AiCornerButton> {
   bool _hovered = false;
 
   @override
@@ -1055,70 +1176,44 @@ class _AiPillButtonState extends State<_AiPillButton> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          height: 62,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          duration: const Duration(milliseconds: 160),
+          width: 58,
+          height: 58,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                const Color(0xFF171720).withOpacity(0.96),
-                const Color(0xFF101017).withOpacity(0.96),
-              ],
-            ),
+            shape: BoxShape.circle,
+            color: Colors.black.withOpacity(0.72),
             border: Border.all(
               color: _hovered
-                  ? const Color(0xFFFF9B57).withOpacity(0.42)
-                  : Colors.white.withOpacity(0.08),
+                  ? const Color(0xFFFFA362).withOpacity(0.45)
+                  : Colors.white.withOpacity(0.10),
             ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFFF8B3D).withOpacity(
-                  _hovered ? 0.24 : 0.14,
-                ),
-                blurRadius: 24,
+                color: Colors.black.withOpacity(0.28),
+                blurRadius: 22,
                 offset: const Offset(0, 12),
               ),
             ],
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFFFFBC81),
-                      Color(0xFFFF8B3D),
-                    ],
-                  ),
-                ),
-                child: const Icon(
-                  Icons.auto_awesome_rounded,
-                  color: Colors.black,
-                  size: 19,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Ask Encore AI',
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
+          child: const Icon(
+            Icons.auto_awesome_rounded,
+            color: Color(0xFFFFA362),
+            size: 24,
           ),
         ),
       ),
+    );
+  }
+}
+
+class _HeroLoadingBackdrop extends StatelessWidget {
+  const _HeroLoadingBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 560,
+      color: Colors.white.withOpacity(0.04),
     );
   }
 }
@@ -1129,56 +1224,46 @@ class _HomeLoadingState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      children: [
-        Container(
-          height: 470,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(32),
-          ),
-        ),
-        const SizedBox(height: 28),
-        ...List.generate(
-          2,
-          (_) => Padding(
-            padding: const EdgeInsets.only(bottom: 28),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 220,
-                      height: 28,
+      children: List.generate(
+        3,
+        (index) => Padding(
+          padding: const EdgeInsets.only(bottom: 28),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 220,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                height: 318,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: 4,
+                  separatorBuilder: (_, __) => const SizedBox(width: 16),
+                  itemBuilder: (_, __) {
+                    return Container(
+                      width: 196,
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(24),
                       ),
-                    ),
-                  ],
+                    );
+                  },
                 ),
-                const SizedBox(height: 14),
-                SizedBox(
-                  height: 320,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: 4,
-                    separatorBuilder: (_, __) => const SizedBox(width: 16),
-                    itemBuilder: (_, __) {
-                      return Container(
-                        width: 196,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(22),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
