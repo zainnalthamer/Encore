@@ -11,7 +11,9 @@ class MediaSeedService {
   final String _rawgApiKey = dotenv.env['RAWG_API_KEY'] ?? '';
 
   static const String _tmdbBaseUrl = 'https://api.themoviedb.org/3';
-  static const String _tmdbImageBase = 'https://image.tmdb.org/t/p/w500';
+
+  static const String _tmdbPosterBase = 'https://image.tmdb.org/t/p/w780';
+  static const String _tmdbBackdropBase = 'https://image.tmdb.org/t/p/original';
 
   Future<List<OnboardingMediaItem>> getMixedPopularFeed({
     int limit = 60,
@@ -106,9 +108,8 @@ class MediaSeedService {
     final uri = Uri.parse(
       '$_tmdbBaseUrl/discover/movie'
       '?api_key=$_tmdbApiKey'
-      '&sort_by=vote_average.desc'
+      '&sort_by=popularity.desc'
       '&vote_count.gte=300'
-      '&vote_average.gte=7.0'
       '&include_adult=false'
       '&page=$page',
     );
@@ -132,16 +133,22 @@ class MediaSeedService {
           .whereType<String>()
           .toList();
 
+      final backdrop = (map['backdrop_path'] ?? '').toString();
+      final poster = (map['poster_path'] ?? '').toString();
+
       return OnboardingMediaItem(
         id: 'tmdb_movie_${map['id']}',
         title: (map['title'] ?? '').toString(),
         domain: 'movies',
         genres: genres,
         tags: genres,
-        imageUrl: map['poster_path'] != null
-            ? '$_tmdbImageBase${map['poster_path']}'
-            : '',
+        imageUrl: backdrop.isNotEmpty
+            ? '$_tmdbBackdropBase$backdrop'
+            : poster.isNotEmpty
+                ? '$_tmdbPosterBase$poster'
+                : '',
         source: 'tmdb',
+        description: (map['overview'] ?? '').toString(),
       );
     }).where((item) => item.title.isNotEmpty).toList();
   }
@@ -152,9 +159,8 @@ class MediaSeedService {
     final uri = Uri.parse(
       '$_tmdbBaseUrl/discover/tv'
       '?api_key=$_tmdbApiKey'
-      '&sort_by=vote_average.desc'
+      '&sort_by=popularity.desc'
       '&vote_count.gte=150'
-      '&vote_average.gte=7.0'
       '&include_adult=false'
       '&page=$page',
     );
@@ -178,16 +184,22 @@ class MediaSeedService {
           .whereType<String>()
           .toList();
 
+      final backdrop = (map['backdrop_path'] ?? '').toString();
+      final poster = (map['poster_path'] ?? '').toString();
+
       return OnboardingMediaItem(
         id: 'tmdb_tv_${map['id']}',
         title: (map['name'] ?? '').toString(),
         domain: 'shows',
         genres: genres,
         tags: genres,
-        imageUrl: map['poster_path'] != null
-            ? '$_tmdbImageBase${map['poster_path']}'
-            : '',
+        imageUrl: backdrop.isNotEmpty
+            ? '$_tmdbBackdropBase$backdrop'
+            : poster.isNotEmpty
+                ? '$_tmdbPosterBase$poster'
+                : '',
         source: 'tmdb',
+        description: (map['overview'] ?? '').toString(),
       );
     }).where((item) => item.title.isNotEmpty).toList();
   }
@@ -210,7 +222,7 @@ class MediaSeedService {
       'https://openlibrary.org/search.json'
       '?q=subject:${Uri.encodeComponent(subject)}'
       '&limit=24'
-      '&fields=key,title,cover_i,subject,ratings_average,ratings_count',
+      '&fields=key,title,cover_i,subject,first_sentence',
     );
 
     final response = await http.get(uri);
@@ -235,6 +247,14 @@ class MediaSeedService {
 
       final coverId = map['cover_i'].toString();
 
+      String description = '';
+      final firstSentence = map['first_sentence'];
+      if (firstSentence is List && firstSentence.isNotEmpty) {
+        description = firstSentence.first.toString();
+      } else if (firstSentence != null) {
+        description = firstSentence.toString();
+      }
+
       return OnboardingMediaItem(
         id: 'openlib_${map['key']}',
         title: map['title'].toString(),
@@ -243,6 +263,7 @@ class MediaSeedService {
         tags: subjects,
         imageUrl: 'https://covers.openlibrary.org/b/id/$coverId-L.jpg',
         source: 'open_library',
+        description: description,
       );
     }).toList();
   }
@@ -253,7 +274,7 @@ class MediaSeedService {
       '?key=$_rawgApiKey'
       '&page=$page'
       '&page_size=20'
-      '&ordering=-rating',
+      '&ordering=-added',
     );
 
     final response = await http.get(uri);
@@ -276,6 +297,10 @@ class MediaSeedService {
           .map((t) => (t as Map<String, dynamic>)['name'].toString())
           .toList();
 
+      final description = tags.isNotEmpty
+          ? 'A popular game associated with ${tags.take(4).join(', ')}.'
+          : '';
+
       return OnboardingMediaItem(
         id: 'rawg_${map['id']}',
         title: (map['name'] ?? '').toString(),
@@ -284,6 +309,7 @@ class MediaSeedService {
         tags: tags,
         imageUrl: (map['background_image'] ?? '').toString(),
         source: 'rawg',
+        description: description,
       );
     }).where((item) => item.title.isNotEmpty && item.imageUrl.isNotEmpty).toList();
   }

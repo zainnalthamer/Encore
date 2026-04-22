@@ -1,11 +1,12 @@
 class OnboardingMediaItem {
   final String id;
   final String title;
-  final String domain; 
+  final String domain;
   final List<String> genres;
   final List<String> tags;
   final String imageUrl;
   final String source;
+  final String description;
 
   const OnboardingMediaItem({
     required this.id,
@@ -15,5 +16,6 @@ class OnboardingMediaItem {
     required this.tags,
     required this.imageUrl,
     required this.source,
+    this.description = '',
   });
 }
