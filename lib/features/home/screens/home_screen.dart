@@ -1,4 +1,3 @@
-import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/models/onboarding_media_item.dart';
 import '../../../core/services/media_seed_service.dart';
 import '../../ai/widgets/ai_recommendation_panel.dart';
+import '../../profile/screens/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -580,7 +580,13 @@ class _FadedTopNav extends StatelessWidget {
               const SizedBox(width: 24),
               const _NavItem(label: 'Discover'),
               const SizedBox(width: 24),
-              const _NavItem(label: 'Profile'),
+              _NavItem(
+                label: 'Profile',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                ),
+              ),
             ],
           ),
         ),
@@ -592,10 +598,12 @@ class _FadedTopNav extends StatelessWidget {
 class _NavItem extends StatefulWidget {
   final String label;
   final bool active;
+  final VoidCallback? onTap;
 
   const _NavItem({
     required this.label,
     this.active = false,
+    this.onTap,
   });
 
   @override
@@ -616,14 +624,17 @@ class _NavItemState extends State<_NavItem> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedDefaultTextStyle(
-        duration: const Duration(milliseconds: 140),
-        style: GoogleFonts.inter(
-          color: color,
-          fontSize: 14.5,
-          fontWeight: widget.active ? FontWeight.w700 : FontWeight.w500,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 140),
+          style: GoogleFonts.inter(
+            color: color,
+            fontSize: 14.5,
+            fontWeight: widget.active ? FontWeight.w700 : FontWeight.w500,
+          ),
+          child: Text(widget.label),
         ),
-        child: Text(widget.label),
       ),
     );
   }
