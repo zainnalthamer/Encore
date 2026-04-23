@@ -8,11 +8,29 @@ class CloudinaryService {
   static const String uploadPreset = "encore_avatar";
 
   Future<String> uploadAvatar(XFile file) async {
-    final uri = Uri.parse("https://api.cloudinary.com/v1_1/$cloudName/image/upload");
+    return _uploadImage(
+      file: file,
+      folder: 'avatars',
+    );
+  }
+
+  Future<String> uploadHeaderImage(XFile file) async {
+    return _uploadImage(
+      file: file,
+      folder: 'headers',
+    );
+  }
+
+  Future<String> _uploadImage({
+    required XFile file,
+    required String folder,
+  }) async {
+    final uri =
+        Uri.parse("https://api.cloudinary.com/v1_1/$cloudName/image/upload");
 
     final request = http.MultipartRequest("POST", uri)
       ..fields["upload_preset"] = uploadPreset
-      ..fields["folder"] = "avatars";
+      ..fields["folder"] = folder;
 
     if (kIsWeb) {
       final bytes = await file.readAsBytes();

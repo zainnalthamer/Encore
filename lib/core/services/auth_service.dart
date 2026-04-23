@@ -156,6 +156,32 @@ class AuthService {
     }
   }
 
+  Future<void> updateProfile({
+    required String uid,
+    required String name,
+    required String bio,
+    required String photoUrl,
+    required String headerImageUrl,
+  }) async {
+    final currentUser = _auth.currentUser;
+
+    await _firestore.collection('users').doc(uid).update({
+      'name': name.trim(),
+      'displayName': name.trim(),
+      'bio': bio.trim(),
+      'photoUrl': photoUrl.trim(),
+      'headerImageUrl': headerImageUrl.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    if (currentUser != null) {
+      await currentUser.updateDisplayName(name.trim());
+      if (photoUrl.trim().isNotEmpty) {
+        await currentUser.updatePhotoURL(photoUrl.trim());
+      }
+    }
+  }
+
   Future<void> logout() async {
     if (!kIsWeb) {
       await GoogleSignIn.instance.signOut();

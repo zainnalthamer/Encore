@@ -49,7 +49,6 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       _showSnackBar(_formatError(e));
     } finally {
-      if (!mounted) return;
       setState(() => _isLoading = false);
     }
   }
@@ -71,7 +70,6 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       _showSnackBar(_formatError(e));
     } finally {
-      if (!mounted) return;
       setState(() => _isLoading = false);
     }
   }

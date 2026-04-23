@@ -58,8 +58,6 @@ class _AiRecommendationPanelState extends State<AiRecommendationPanel> {
         _error = e.toString().replaceFirst('Exception: ', '');
       });
     } finally {
-      if (!mounted) return;
-
       setState(() {
         _isLoading = false;
       });

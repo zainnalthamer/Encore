@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/services/auth_service.dart';
+import 'edit_profile_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -257,7 +258,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       clipBehavior: Clip.none,
                       children: [
                         SizedBox(
-                          height: 240,
+                          height: 300,
                           width: double.infinity,
                           child: headerImageUrl.isNotEmpty
                               ? Image.network(
@@ -295,7 +296,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Positioned(
                           left: 0,
                           right: 0,
-                          bottom: -58,
+                          bottom: 18,
                           child: Center(
                             child: Stack(
                               clipBehavior: Clip.none,
@@ -332,31 +333,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 Positioned(
                                   right: 2,
                                   bottom: 2,
-                                  child: InkWell(
-                                    onTap: () {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Profile editing will be added next.',
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      onTap: () async {
+                                        await Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                const EditProfileScreen(),
+                                            fullscreenDialog: true,
+                                          ),
+                                        );
+                                      },
+                                      borderRadius: BorderRadius.circular(999),
+                                      child: Container(
+                                        width: 38,
+                                        height: 38,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: const Color(0xFF121217),
+                                          border: Border.all(
+                                            color: Colors.white.withOpacity(0.08),
                                           ),
                                         ),
-                                      );
-                                    },
-                                    borderRadius: BorderRadius.circular(999),
-                                    child: Container(
-                                      width: 38,
-                                      height: 38,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: const Color(0xFF121217),
-                                        border: Border.all(
-                                          color: Colors.white.withOpacity(0.08),
+                                        child: const Icon(
+                                          Icons.edit_rounded,
+                                          color: Colors.white,
+                                          size: 18,
                                         ),
-                                      ),
-                                      child: const Icon(
-                                        Icons.edit_rounded,
-                                        color: Colors.white,
-                                        size: 18,
                                       ),
                                     ),
                                   ),
@@ -370,9 +374,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 82, 20, 28),
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
                       child: Column(
                         children: [
+                          const SizedBox(height:5),
                           ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 760),
                             child: Column(
