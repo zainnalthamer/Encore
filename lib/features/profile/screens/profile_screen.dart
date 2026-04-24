@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/services/auth_service.dart';
 import 'edit_profile_screen.dart';
+import '../../settings/screens/settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -53,20 +54,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (!mounted || result == null) return;
 
+    if (result == 'settings') {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => const SettingsScreen(),
+        ),
+      );
+      return;
+    }
+
+    if (result == 'analytics') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Analytics will be added next.'),
+        ),
+      );
+      return;
+    }
+
     if (result == 'logout') {
       await _authService.logout();
       return;
     }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          result == 'settings'
-              ? 'Settings will be added next.'
-              : 'Analytics will be added next.',
-        ),
-      ),
-    );
   }
 
   Widget _menuItem(IconData icon, String label, {bool destructive = false}) {
