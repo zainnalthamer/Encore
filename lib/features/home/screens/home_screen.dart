@@ -1,4 +1,3 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/models/onboarding_media_item.dart';
 import '../../../core/services/media_seed_service.dart';
 import '../../ai/widgets/ai_recommendation_panel.dart';
+import '../../items/screens/item_details_screen.dart';
 import '../../profile/screens/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -86,12 +86,21 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _handleScroll() {
-    final scrolled = _scrollController.hasClients && _scrollController.offset > 24;
+    final scrolled =
+        _scrollController.hasClients && _scrollController.offset > 24;
     if (scrolled != _navScrolled) {
       setState(() {
         _navScrolled = scrolled;
       });
     }
+  }
+
+  void _openItemDetails(OnboardingMediaItem item) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ItemDetailsScreen(item: item),
+      ),
+    );
   }
 
   Future<void> _loadHomeFeed() async {
@@ -102,7 +111,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final preferences = await _loadUserPreferences();
-      final fetchedItems = await _mediaSeedService.getMixedPopularFeed(limit: 72);
+      final fetchedItems =
+          await _mediaSeedService.getMixedPopularFeed(limit: 72);
 
       final favoriteDomains = preferences.favoriteDomains.isEmpty
           ? ['movies', 'shows', 'books', 'games']
@@ -158,10 +168,8 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    final doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .get();
+    final doc =
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
 
     final data = doc.data() ?? {};
     final derived = (data['derivedPreferences'] as Map<String, dynamic>?) ?? {};
@@ -175,7 +183,8 @@ class _HomeScreenState extends State<HomeScreen> {
           (derived['topGenres'] as List?)?.map((e) => e.toString()).toList() ??
               [],
       topTags:
-          (derived['topTags'] as List?)?.map((e) => e.toString()).toList() ?? [],
+          (derived['topTags'] as List?)?.map((e) => e.toString()).toList() ??
+              [],
     );
   }
 
@@ -275,9 +284,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final targetGenre = topGenres.first.toLowerCase();
     final filtered = scored
-        .where((entry) => entry.item.genres.any(
-              (genre) => genre.toLowerCase() == targetGenre,
-            ))
+        .where(
+          (entry) => entry.item.genres.any(
+            (genre) => genre.toLowerCase() == targetGenre,
+          ),
+        )
         .map((entry) => entry.item)
         .toList();
 
@@ -374,7 +385,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _previousHero() {
     if (_popularItems.isEmpty) return;
-    final previous = (_heroIndex - 1 + _popularItems.length) % _popularItems.length;
+    final previous =
+        (_heroIndex - 1 + _popularItems.length) % _popularItems.length;
     _heroController.animateToPage(
       previous,
       duration: const Duration(milliseconds: 320),
@@ -428,6 +440,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           _heroIndex = index;
                         });
                       },
+                      onOpenItem: _openItemDetails,
                       domainColor: _domainColor,
                       domainIcon: _domainIcon,
                       domainLabel: _domainLabel,
@@ -462,6 +475,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             domainColor: _domainColor,
                             domainIcon: _domainIcon,
                             domainLabel: _domainLabel,
+                            onOpenItem: _openItemDetails,
                           ),
                           const SizedBox(height: 30),
                           _SectionTitle(
@@ -474,6 +488,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             domainColor: _domainColor,
                             domainIcon: _domainIcon,
                             domainLabel: _domainLabel,
+                            onOpenItem: _openItemDetails,
                           ),
                           const SizedBox(height: 30),
                           const _SectionTitle(
@@ -542,53 +557,50 @@ class _FadedTopNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IgnorePointer(
-      ignoring: false,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        height: _HomeScreenState._navHeight,
-        padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withOpacity(scrolled ? 0.95 : 0.85),
-              Colors.black.withOpacity(scrolled ? 0.75 : 0.55),
-              Colors.black.withOpacity(scrolled ? 0.35 : 0.20),
-              Colors.transparent, // IMPORTANT: full transparent at bottom
-            ],
-            stops: const [0.0, 0.4, 0.75, 1.0],
-          ),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      height: _HomeScreenState._navHeight,
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withOpacity(scrolled ? 0.95 : 0.85),
+            Colors.black.withOpacity(scrolled ? 0.75 : 0.55),
+            Colors.black.withOpacity(scrolled ? 0.35 : 0.20),
+            Colors.transparent,
+          ],
+          stops: const [0.0, 0.4, 0.75, 1.0],
         ),
-        child: SafeArea(
-          bottom: false,
-          child: Row(
-            children: [
-              Text(
-                'Encore',
-                style: GoogleFonts.inter(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  letterSpacing: -0.8,
-                ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Row(
+          children: [
+            Text(
+              'Encore',
+              style: GoogleFonts.inter(
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                letterSpacing: -0.8,
               ),
-              const Spacer(),
-              const _NavItem(label: 'Home', active: true),
-              const SizedBox(width: 24),
-              const _NavItem(label: 'Discover'),
-              const SizedBox(width: 24),
-              _NavItem(
-                label: 'Profile',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ProfileScreen()),
-                ),
+            ),
+            const Spacer(),
+            const _NavItem(label: 'Home', active: true),
+            const SizedBox(width: 24),
+            const _NavItem(label: 'Discover'),
+            const SizedBox(width: 24),
+            _NavItem(
+              label: 'Profile',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProfileScreen()),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -625,6 +637,7 @@ class _NavItemState extends State<_NavItem> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
         child: AnimatedDefaultTextStyle(
           duration: const Duration(milliseconds: 140),
@@ -647,6 +660,7 @@ class _HeroCarousel extends StatelessWidget {
   final ValueChanged<int> onChanged;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
+  final ValueChanged<OnboardingMediaItem> onOpenItem;
   final Color Function(String) domainColor;
   final IconData Function(String) domainIcon;
   final String Function(String) domainLabel;
@@ -658,6 +672,7 @@ class _HeroCarousel extends StatelessWidget {
     required this.onChanged,
     required this.onPrevious,
     required this.onNext,
+    required this.onOpenItem,
     required this.domainColor,
     required this.domainIcon,
     required this.domainLabel,
@@ -672,154 +687,162 @@ class _HeroCarousel extends StatelessWidget {
       height: _HomeScreenState._heroHeight,
       child: Stack(
         children: [
-          PageView.builder(
-            physics: const NeverScrollableScrollPhysics(),
-            controller: controller,
-            itemCount: items.length,
-            onPageChanged: onChanged,
-            itemBuilder: (context, index) {
-              final current = items[index];
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (current.imageUrl.trim().isNotEmpty)
-                    Image.network(
-                      current.imageUrl,
-                      fit: BoxFit.cover,
-                      filterQuality: FilterQuality.high,
-                      errorBuilder: (_, __, ___) => Container(
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => onOpenItem(items[heroIndex]),
+            child: PageView.builder(
+              physics: const NeverScrollableScrollPhysics(),
+              controller: controller,
+              itemCount: items.length,
+              onPageChanged: onChanged,
+              itemBuilder: (context, index) {
+                final current = items[index];
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (current.imageUrl.trim().isNotEmpty)
+                      Image.network(
+                        current.imageUrl,
+                        fit: BoxFit.cover,
+                        filterQuality: FilterQuality.high,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: const Color(0xFF111114),
+                        ),
+                      )
+                    else
+                      Container(
                         color: const Color(0xFF111114),
                       ),
-                    )
-                  else
-                    Container(
-                      color: const Color(0xFF111114),
-                    ),
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.black.withOpacity(0.88),
-                            Colors.black.withOpacity(0.34),
-                            Colors.black.withOpacity(0.42),
-                            Colors.black.withOpacity(0.96),
-                          ],
-                          stops: const [0.0, 0.22, 0.58, 1.0],
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withOpacity(0.88),
+                              Colors.black.withOpacity(0.34),
+                              Colors.black.withOpacity(0.42),
+                              Colors.black.withOpacity(0.96),
+                            ],
+                            stops: const [0.0, 0.22, 0.58, 1.0],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
-              );
-            },
+                  ],
+                );
+              },
+            ),
           ),
           Positioned(
             left: 28,
             right: 28,
             bottom: 70,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 780),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          'POPULAR',
-                          style: GoogleFonts.inter(
-                            color: Colors.black,
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.15,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onOpenItem(item),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 780),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 7,
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: color.withOpacity(0.16),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: color.withOpacity(0.48),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(999),
                           ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              domainIcon(item.domain),
-                              color: color,
-                              size: 13,
+                          child: Text(
+                            'POPULAR',
+                            style: GoogleFonts.inter(
+                              color: Colors.black,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.15,
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              domainLabel(item.domain).toUpperCase(),
-                              style: GoogleFonts.inter(
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.16),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: color.withOpacity(0.48),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                domainIcon(item.domain),
                                 color: color,
-                                fontSize: 10.8,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1.0,
+                                size: 13,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 6),
+                              Text(
+                                domainLabel(item.domain).toUpperCase(),
+                                style: GoogleFonts.inter(
+                                  color: color,
+                                  fontSize: 10.8,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.0,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 40,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -1.3,
+                        height: 0.98,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    item.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 40,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -1.3,
-                      height: 0.98,
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    item.genres.isEmpty
-                        ? 'Genres: Curated'
-                        : 'Genres: ${item.genres.take(3).join(', ')}',
-                    style: GoogleFonts.inter(
-                      color: Colors.white.withOpacity(0.78),
-                      fontSize: 14.2,
-                      fontWeight: FontWeight.w600,
+                    const SizedBox(height: 10),
+                    Text(
+                      item.genres.isEmpty
+                          ? 'Genres: Curated'
+                          : 'Genres: ${item.genres.take(3).join(', ')}',
+                      style: GoogleFonts.inter(
+                        color: Colors.white.withOpacity(0.78),
+                        fontSize: 14.2,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    item.description.trim().isEmpty
-                        ? 'A standout title from the current popular feed.'
-                        : item.description,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      color: Colors.white.withOpacity(0.86),
-                      fontSize: 14.6,
-                      height: 1.6,
+                    const SizedBox(height: 10),
+                    Text(
+                      item.description.trim().isEmpty
+                          ? 'A standout title from the current popular feed.'
+                          : item.description,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        color: Colors.white.withOpacity(0.86),
+                        fontSize: 14.6,
+                        height: 1.6,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -859,9 +882,8 @@ class _HeroCarousel extends StatelessWidget {
                   width: active ? 18 : 6,
                   height: 6,
                   decoration: BoxDecoration(
-                    color: active
-                        ? Colors.white
-                        : Colors.white.withOpacity(0.32),
+                    color:
+                        active ? Colors.white : Colors.white.withOpacity(0.32),
                     borderRadius: BorderRadius.circular(999),
                   ),
                 );
@@ -958,12 +980,14 @@ class _PosterRow extends StatelessWidget {
   final Color Function(String) domainColor;
   final IconData Function(String) domainIcon;
   final String Function(String) domainLabel;
+  final ValueChanged<OnboardingMediaItem> onOpenItem;
 
   const _PosterRow({
     required this.items,
     required this.domainColor,
     required this.domainIcon,
     required this.domainLabel,
+    required this.onOpenItem,
   });
 
   @override
@@ -984,6 +1008,7 @@ class _PosterRow extends StatelessWidget {
             domainColor: domainColor,
             domainIcon: domainIcon,
             domainLabel: domainLabel,
+            onOpenItem: onOpenItem,
           );
         },
       ),
@@ -996,12 +1021,14 @@ class _PosterCard extends StatefulWidget {
   final Color Function(String) domainColor;
   final IconData Function(String) domainIcon;
   final String Function(String) domainLabel;
+  final ValueChanged<OnboardingMediaItem> onOpenItem;
 
   const _PosterCard({
     required this.item,
     required this.domainColor,
     required this.domainIcon,
     required this.domainLabel,
+    required this.onOpenItem,
   });
 
   @override
@@ -1014,107 +1041,112 @@ class _PosterCardState extends State<_PosterCard> {
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: 0, end: _hovered ? -6 : 0),
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        builder: (context, offset, child) {
-          return Transform.translate(
-            offset: Offset(0, offset),
-            child: child,
-          );
-        },
-        child: SizedBox(
-          width: 196,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (widget.item.imageUrl.trim().isNotEmpty)
-                        Image.network(
-                          widget.item.imageUrl,
-                          fit: BoxFit.cover,
-                          filterQuality: FilterQuality.medium,
-                          errorBuilder: (_, __, ___) => Container(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => widget.onOpenItem(widget.item),
+        child: TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0, end: _hovered ? -6 : 0),
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          builder: (context, offset, child) {
+            return Transform.translate(
+              offset: Offset(0, offset),
+              child: child,
+            );
+          },
+          child: SizedBox(
+            width: 196,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (widget.item.imageUrl.trim().isNotEmpty)
+                          Image.network(
+                            widget.item.imageUrl,
+                            fit: BoxFit.cover,
+                            filterQuality: FilterQuality.medium,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.white.withOpacity(0.05),
+                            ),
+                          )
+                        else
+                          Container(
                             color: Colors.white.withOpacity(0.05),
                           ),
-                        )
-                      else
-                        Container(
-                          color: Colors.white.withOpacity(0.05),
-                        ),
-                      Positioned.fill(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.transparent,
-                                Colors.black.withOpacity(0.08),
-                                Colors.black.withOpacity(0.66),
-                              ],
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withOpacity(0.08),
+                                  Colors.black.withOpacity(0.66),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      Positioned(
-                        top: 10,
-                        left: 10,
-                        child: Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.34),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(
-                            widget.domainIcon(widget.item.domain),
-                            color: Colors.white,
-                            size: 18,
+                        Positioned(
+                          top: 10,
+                          left: 10,
+                          child: Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.34),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              widget.domainIcon(widget.item.domain),
+                              color: Colors.white,
+                              size: 18,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                widget.item.title,
-                maxLines: 3,
-                softWrap: true,
-                overflow: TextOverflow.visible,
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  height: 1.22,
-                  letterSpacing: -0.2,
+                const SizedBox(height: 10),
+                Text(
+                  widget.item.title,
+                  maxLines: 3,
+                  softWrap: true,
+                  overflow: TextOverflow.visible,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    height: 1.22,
+                    letterSpacing: -0.2,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                widget.item.genres.isNotEmpty
-                    ? widget.item.genres.take(2).join(' · ')
-                    : widget.domainLabel(widget.item.domain),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.60),
-                  fontSize: 12.8,
-                  fontWeight: FontWeight.w500,
-                  height: 1.4,
+                const SizedBox(height: 5),
+                Text(
+                  widget.item.genres.isNotEmpty
+                      ? widget.item.genres.take(2).join(' · ')
+                      : widget.domainLabel(widget.item.domain),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    color: Colors.white.withOpacity(0.60),
+                    fontSize: 12.8,
+                    fontWeight: FontWeight.w500,
+                    height: 1.4,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1389,13 +1421,15 @@ class _AiCornerButtonState extends State<_AiCornerButton> {
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
-                    width: 58,
+          width: 58,
           height: 58,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
