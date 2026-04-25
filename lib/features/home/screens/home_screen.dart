@@ -591,7 +591,10 @@ class _FadedTopNav extends StatelessWidget {
             const Spacer(),
             const _NavItem(label: 'Home', active: true),
             const SizedBox(width: 24),
-            const _NavItem(label: 'Discover'),
+            _NavItem(
+              label: 'Discover',
+              onTap: () => Navigator.pushReplacementNamed(context, '/discover'),
+            ),
             const SizedBox(width: 24),
             _NavItem(
               label: 'Profile',

@@ -5,9 +5,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/models/onboarding_media_item.dart';
 import '../../../core/services/auth_service.dart';
-import 'edit_profile_screen.dart';
+import '../../../core/services/user_library_service.dart';
+import '../../items/screens/item_details_screen.dart';
 import '../../settings/screens/settings_screen.dart';
+import 'edit_profile_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -18,6 +21,8 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final AuthService _authService = AuthService();
+  final UserLibraryService _libraryService = UserLibraryService();
+
   String _selectedSection = 'Favorites';
 
   final List<String> _sections = const [
@@ -55,31 +60,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted || result == null) return;
 
     if (result == 'settings') {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => const SettingsScreen(),
-        ),
-      );
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
       return;
     }
 
     if (result == 'analytics') {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Analytics will be added next.'),
-        ),
+        const SnackBar(content: Text('Analytics will be added next.')),
       );
       return;
     }
 
     if (result == 'logout') {
       await _authService.logout();
-      return;
     }
   }
 
   Widget _menuItem(IconData icon, String label, {bool destructive = false}) {
     final color = destructive ? const Color(0xFFFF8EA1) : Colors.white;
+
     return Row(
       children: [
         Icon(icon, size: 18, color: color),
@@ -97,53 +98,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildSectionContent(Map<String, dynamic> userData) {
-    final favoriteItemIds =
-        (userData['favoriteItemIds'] as Map<String, dynamic>?) ?? {};
-
-    final movies = (favoriteItemIds['movies'] as List?)?.length ?? 0;
-    final shows = (favoriteItemIds['shows'] as List?)?.length ?? 0;
-    final books = (favoriteItemIds['books'] as List?)?.length ?? 0;
-    final games = (favoriteItemIds['games'] as List?)?.length ?? 0;
-
-    final derived =
-        (userData['derivedPreferences'] as Map<String, dynamic>?) ?? {};
-    final topGenres =
-        ((derived['topGenres'] as List?) ?? []).map((e) => e.toString()).toList();
-    final favoriteDomains = ((derived['favoriteDomains'] as List?) ?? [])
-        .map((e) => e.toString())
-        .toList();
-
     switch (_selectedSection) {
       case 'Favorites':
-        return _SectionSurface(
-          child: Column(
-            children: [
-              _InfoRow(
-                label: 'Movies',
-                value: movies.toString(),
-                accent: const Color(0xFFFF9E57),
-              ),
-              const SizedBox(height: 12),
-              _InfoRow(
-                label: 'Shows',
-                value: shows.toString(),
-                accent: const Color(0xFF8CAFFF),
-              ),
-              const SizedBox(height: 12),
-              _InfoRow(
-                label: 'Books',
-                value: books.toString(),
-                accent: const Color(0xFFF0C46A),
-              ),
-              const SizedBox(height: 12),
-              _InfoRow(
-                label: 'Games',
-                value: games.toString(),
-                accent: const Color(0xFF63D8AE),
-              ),
-            ],
-          ),
-        );
+        return _FavoritesSection(libraryService: _libraryService);
 
       case 'Shelves':
         return const _SectionSurface(
@@ -155,31 +112,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
 
       case 'Activity':
-        return _SectionSurface(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _TagBlock(
-                title: 'Top genres',
-                tags: topGenres,
-              ),
-              const SizedBox(height: 18),
-              _TagBlock(
-                title: 'Favorite domains',
-                tags: favoriteDomains,
-              ),
-            ],
-          ),
-        );
+        return _ActivitySection(libraryService: _libraryService);
 
       case 'Saved':
-        return const _SectionSurface(
-          child: _LargeInfoBlock(
-            title: 'Nothing saved yet',
-            body:
-                'Items you want to come back to later can appear here once you start saving them.',
-          ),
-        );
+        return _SavedSection(libraryService: _libraryService);
 
       default:
         return const SizedBox.shrink();
@@ -209,7 +145,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF050507),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
@@ -231,6 +170,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
 
           final userData = snapshot.data?.data();
+
           if (userData == null) {
             return Center(
               child: Text(
@@ -245,21 +185,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
 
           final displayName =
-              (userData['displayName'] ?? userData['name'] ?? 'User').toString();
+              (userData['displayName'] ?? userData['name'] ?? 'User')
+                  .toString();
           final username = (userData['username'] ?? '').toString().trim();
           final bio = (userData['bio'] ?? '').toString().trim();
           final photoUrl = (userData['photoUrl'] ?? '').toString().trim();
-          final headerImageUrl =
-              (userData['headerImageUrl'] ?? '').toString().trim();
+          final headerImageUrl = (userData['headerImageUrl'] ?? '')
+              .toString()
+              .trim();
 
           final followers = ((userData['followers'] as List?) ?? []).length;
           final following = ((userData['following'] as List?) ?? []).length;
 
           return Stack(
             children: [
-              Positioned.fill(
-                child: Container(color: const Color(0xFF050507)),
-              ),
+              Positioned.fill(child: Container(color: const Color(0xFF050507))),
               CustomScrollView(
                 slivers: [
                   SliverToBoxAdapter(
@@ -348,7 +288,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       onTap: () async {
                                         await Navigator.of(context).push(
                                           MaterialPageRoute(
-                                            builder: (context) =>
+                                            builder: (_) =>
                                                 const EditProfileScreen(),
                                             fullscreenDialog: true,
                                           ),
@@ -362,7 +302,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           shape: BoxShape.circle,
                                           color: const Color(0xFF121217),
                                           border: Border.all(
-                                            color: Colors.white.withOpacity(0.08),
+                                            color: Colors.white.withOpacity(
+                                              0.08,
+                                            ),
                                           ),
                                         ),
                                         child: const Icon(
@@ -386,7 +328,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
                       child: Column(
                         children: [
-                          const SizedBox(height:5),
+                          const SizedBox(height: 5),
                           ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 760),
                             child: Column(
@@ -447,16 +389,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           const SizedBox(height: 34),
                           ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 760),
+                            constraints: const BoxConstraints(maxWidth: 960),
                             child: Column(
                               children: [
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    for (int i = 0; i < _sections.length; i++) ...[
+                                    for (
+                                      int i = 0;
+                                      i < _sections.length;
+                                      i++
+                                    ) ...[
                                       _TopSectionTab(
                                         label: _sections[i],
-                                        selected: _selectedSection == _sections[i],
+                                        selected:
+                                            _selectedSection == _sections[i],
                                         onTap: () {
                                           setState(() {
                                             _selectedSection = _sections[i];
@@ -471,7 +418,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           child: Text(
                                             '|',
                                             style: GoogleFonts.inter(
-                                              color: Colors.white.withOpacity(0.22),
+                                              color: Colors.white.withOpacity(
+                                                0.22,
+                                              ),
                                               fontSize: 16,
                                               fontWeight: FontWeight.w500,
                                             ),
@@ -504,19 +453,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF0C0C10),
-            Color(0xFF111118),
-            Color(0xFF171724),
-          ],
+          colors: [Color(0xFF0C0C10), Color(0xFF111118), Color(0xFF171724)],
         ),
       ),
     );
   }
 
   Widget _avatarFallback(String displayName) {
-    final first =
-        displayName.trim().isNotEmpty ? displayName.trim()[0].toUpperCase() : 'U';
+    final first = displayName.trim().isNotEmpty
+        ? displayName.trim()[0].toUpperCase()
+        : 'U';
 
     return Container(
       color: const Color(0xFF141419),
@@ -534,12 +480,443 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
+class _FavoritesSection extends StatelessWidget {
+  final UserLibraryService libraryService;
+
+  const _FavoritesSection({required this.libraryService});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: libraryService.watchFavorites(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const _SectionSurface(
+            child: Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return const _SectionSurface(
+            child: _LargeInfoBlock(
+              title: 'Unable to load favorites',
+              body: 'Check your Firestore rules for users/{uid}/libraryItems.',
+            ),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+
+        if (docs.isEmpty) {
+          return const _SectionSurface(
+            child: _LargeInfoBlock(
+              title: 'No favorites yet',
+              body:
+                  'Favorite items will appear here with your rating and review.',
+            ),
+          );
+        }
+
+        return _SectionSurface(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              final count = width > 820
+                  ? 5
+                  : width > 620
+                  ? 4
+                  : 2;
+
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: docs.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: count,
+                  mainAxisSpacing: 18,
+                  crossAxisSpacing: 14,
+                  childAspectRatio: 0.48,
+                ),
+                itemBuilder: (context, index) {
+                  return _FavoriteItemCard(data: docs[index].data());
+                },
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SavedSection extends StatelessWidget {
+  final UserLibraryService libraryService;
+
+  const _SavedSection({required this.libraryService});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: libraryService.watchSaved(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const _SectionSurface(
+            child: Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return const _SectionSurface(
+            child: _LargeInfoBlock(
+              title: 'Unable to load saved items',
+              body: 'Check your Firestore rules for users/{uid}/libraryItems.',
+            ),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+
+        if (docs.isEmpty) {
+          return const _SectionSurface(
+            child: _LargeInfoBlock(
+              title: 'No saved items yet',
+              body: 'Items you save will appear here for easy access later.',
+            ),
+          );
+        }
+
+        return _SectionSurface(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              final count = width > 820
+                  ? 5
+                  : width > 620
+                  ? 4
+                  : 2;
+
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: docs.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: count,
+                  mainAxisSpacing: 18,
+                  crossAxisSpacing: 14,
+                  childAspectRatio: 0.48,
+                ),
+                itemBuilder: (context, index) {
+                  return _FavoriteItemCard(data: docs[index].data());
+                },
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FavoriteItemCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+
+  const _FavoriteItemCard({required this.data});
+
+  OnboardingMediaItem _toItem() {
+    return OnboardingMediaItem(
+      id: (data['itemId'] ?? '').toString(),
+      title: (data['title'] ?? 'Untitled').toString(),
+      domain: (data['domain'] ?? '').toString(),
+      genres: ((data['genres'] as List?) ?? [])
+          .map((e) => e.toString())
+          .toList(),
+      tags: ((data['tags'] as List?) ?? []).map((e) => e.toString()).toList(),
+      imageUrl: (data['imageUrl'] ?? '').toString(),
+      source: 'library',
+      description: (data['description'] ?? '').toString(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = _toItem();
+    final rating = ((data['userRating'] ?? 0) as num).toDouble();
+    final review = (data['review'] ?? '').toString();
+    final status = (data['status'] ?? '').toString();
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => ItemDetailsScreen(item: item)),
+        );
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: item.imageUrl.isNotEmpty
+                    ? Image.network(
+                        item.imageUrl,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _posterFallback(),
+                      )
+                    : _posterFallback(),
+              ),
+            ),
+            const SizedBox(height: 9),
+            Text(
+              item.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontSize: 12.8,
+                fontWeight: FontWeight.w800,
+                height: 1.25,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Row(
+              children: [
+                const Icon(
+                  Icons.star_rounded,
+                  color: Color(0xFFFF8B3D),
+                  size: 15,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  rating <= 0 ? 'No rating' : rating.toStringAsFixed(1),
+                  style: GoogleFonts.inter(
+                    color: Colors.white.withOpacity(0.70),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            if (status.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                status,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: const Color(0xFFFF8B3D).withOpacity(0.82),
+                  fontSize: 11.2,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+            if (review.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                review,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: Colors.white.withOpacity(0.46),
+                  fontSize: 11,
+                  height: 1.3,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _posterFallback() {
+    return Container(
+      width: double.infinity,
+      color: Colors.white.withOpacity(0.06),
+      child: const Center(
+        child: Icon(Icons.image_outlined, color: Colors.white54),
+      ),
+    );
+  }
+}
+
+class _ActivitySection extends StatelessWidget {
+  final UserLibraryService libraryService;
+
+  const _ActivitySection({required this.libraryService});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: libraryService.watchActivity(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const _SectionSurface(
+            child: Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return const _SectionSurface(
+            child: _LargeInfoBlock(
+              title: 'Unable to load activity',
+              body:
+                  'Check your Firestore index/rules for users/{uid}/libraryItems.',
+            ),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+
+        if (docs.isEmpty) {
+          return const _SectionSurface(
+            child: _LargeInfoBlock(
+              title: 'No activity yet',
+              body:
+                  'Likes, favorites, ratings, reviews, and status updates will show here.',
+            ),
+          );
+        }
+
+        return _SectionSurface(
+          child: Column(
+            children: docs.map((doc) {
+              final data = doc.data();
+              return _ActivityCard(data: data);
+            }).toList(),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ActivityCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+
+  const _ActivityCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = (data['title'] ?? 'Untitled').toString();
+    final imageUrl = (data['imageUrl'] ?? '').toString();
+    final activityType = (data['activityType'] ?? 'updated').toString();
+    final rating = ((data['userRating'] ?? 0) as num).toDouble();
+    final review = (data['review'] ?? '').toString();
+    final status = (data['status'] ?? '').toString();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.035),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.045)),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: imageUrl.isNotEmpty
+                ? Image.network(
+                    imageUrl,
+                    width: 52,
+                    height: 72,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _activityImageFallback(),
+                  )
+                : _activityImageFallback(),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  activityType.toUpperCase(),
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFFFF8B3D),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (status.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    status,
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.58),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                if (rating > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Rated ${rating.toStringAsFixed(1)} / 5',
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.58),
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ],
+                if (review.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    review,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.52),
+                      fontSize: 12.5,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _activityImageFallback() {
+    return Container(
+      width: 52,
+      height: 72,
+      color: Colors.white.withOpacity(0.06),
+      child: const Icon(Icons.image_outlined, color: Colors.white38, size: 20),
+    );
+  }
+}
+
 class _ProfileTopNav extends StatelessWidget {
   final VoidCallback onMenuTap;
 
-  const _ProfileTopNav({
-    required this.onMenuTap,
-  });
+  const _ProfileTopNav({required this.onMenuTap});
 
   @override
   Widget build(BuildContext context) {
@@ -575,18 +952,16 @@ class _ProfileTopNav extends StatelessWidget {
             const Spacer(),
             _TopTextButton(
               label: 'Home',
-              onTap: () => Navigator.of(context).pop(),
+              onTap: () => Navigator.of(context).pushReplacementNamed('/home'),
             ),
             const SizedBox(width: 24),
             _TopTextButton(
               label: 'Discover',
-              onTap: () => Navigator.of(context).pop(),
+              onTap: () =>
+                  Navigator.of(context).pushReplacementNamed('/discover'),
             ),
             const SizedBox(width: 24),
-            const _TopTextButton(
-              label: 'Profile',
-              active: true,
-            ),
+            const _TopTextButton(label: 'Profile', active: true),
             const SizedBox(width: 18),
             InkWell(
               onTap: onMenuTap,
@@ -617,11 +992,7 @@ class _TopTextButton extends StatelessWidget {
   final VoidCallback? onTap;
   final bool active;
 
-  const _TopTextButton({
-    required this.label,
-    this.onTap,
-    this.active = false,
-  });
+  const _TopTextButton({required this.label, this.onTap, this.active = false});
 
   @override
   Widget build(BuildContext context) {
@@ -678,10 +1049,7 @@ class _CountTextBlock extends StatelessWidget {
   final String value;
   final String label;
 
-  const _CountTextBlock({
-    required this.value,
-    required this.label,
-  });
+  const _CountTextBlock({required this.value, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -713,9 +1081,7 @@ class _CountTextBlock extends StatelessWidget {
 class _SectionSurface extends StatelessWidget {
   final Widget child;
 
-  const _SectionSurface({
-    required this.child,
-  });
+  const _SectionSurface({required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -729,66 +1095,10 @@ class _SectionSurface extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.04),
             borderRadius: BorderRadius.circular(30),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.05),
-            ),
+            border: Border.all(color: Colors.white.withOpacity(0.05)),
           ),
           child: child,
         ),
-      ),
-    );
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color accent;
-
-  const _InfoRow({
-    required this.label,
-    required this.value,
-    required this.accent,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.035),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: accent,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.86),
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -798,10 +1108,7 @@ class _LargeInfoBlock extends StatelessWidget {
   final String title;
   final String body;
 
-  const _LargeInfoBlock({
-    required this.title,
-    required this.body,
-  });
+  const _LargeInfoBlock({required this.title, required this.body});
 
   @override
   Widget build(BuildContext context) {
@@ -833,75 +1140,6 @@ class _LargeInfoBlock extends StatelessWidget {
               height: 1.65,
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TagBlock extends StatelessWidget {
-  final String title;
-  final List<String> tags;
-
-  const _TagBlock({
-    required this.title,
-    required this.tags,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.035),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: GoogleFonts.inter(
-              color: Colors.white,
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 14),
-          if (tags.isEmpty)
-            Text(
-              'Nothing here yet',
-              style: GoogleFonts.inter(
-                color: Colors.white.withOpacity(0.55),
-                fontSize: 13.5,
-              ),
-            )
-          else
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: tags.map((tag) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 9,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    tag,
-                    style: GoogleFonts.inter(
-                      color: Colors.white70,
-                      fontSize: 12.8,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
         ],
       ),
     );

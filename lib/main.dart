@@ -4,6 +4,9 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'firebase_options.dart';
 import 'features/auth/screens/login_screen.dart';
+import 'features/home/screens/home_screen.dart';
+import 'features/discover/screens/discover_screen.dart';
+import 'features/profile/screens/profile_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +29,11 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Encore',
       home: const LoginScreen(),
+      routes: {
+        '/home': (context) => const HomeScreen(),
+        '/discover': (context) => const DiscoverScreen(),
+        '/profile': (context) => const ProfileScreen(),
+      },
     );
   }
 }
