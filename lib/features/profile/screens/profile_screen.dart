@@ -60,9 +60,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted || result == null) return;
 
     if (result == 'settings') {
-      Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+      );
       return;
     }
 
@@ -190,9 +190,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final username = (userData['username'] ?? '').toString().trim();
           final bio = (userData['bio'] ?? '').toString().trim();
           final photoUrl = (userData['photoUrl'] ?? '').toString().trim();
-          final headerImageUrl = (userData['headerImageUrl'] ?? '')
-              .toString()
-              .trim();
+          final headerImageUrl =
+              (userData['headerImageUrl'] ?? '').toString().trim();
 
           final followers = ((userData['followers'] as List?) ?? []).length;
           final following = ((userData['following'] as List?) ?? []).length;
@@ -302,9 +301,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           shape: BoxShape.circle,
                                           color: const Color(0xFF121217),
                                           border: Border.all(
-                                            color: Colors.white.withOpacity(
-                                              0.08,
-                                            ),
+                                            color:
+                                                Colors.white.withOpacity(0.08),
                                           ),
                                         ),
                                         child: const Icon(
@@ -325,7 +323,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 36),
                       child: Column(
                         children: [
                           const SizedBox(height: 5),
@@ -389,17 +387,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           const SizedBox(height: 34),
                           ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 960),
+                            constraints: const BoxConstraints(maxWidth: 980),
                             child: Column(
                               children: [
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    for (
-                                      int i = 0;
-                                      i < _sections.length;
-                                      i++
-                                    ) ...[
+                                    for (int i = 0;
+                                        i < _sections.length;
+                                        i++) ...[
                                       _TopSectionTab(
                                         label: _sections[i],
                                         selected:
@@ -418,9 +414,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           child: Text(
                                             '|',
                                             style: GoogleFonts.inter(
-                                              color: Colors.white.withOpacity(
-                                                0.22,
-                                              ),
+                                              color:
+                                                  Colors.white.withOpacity(0.22),
                                               fontSize: 16,
                                               fontWeight: FontWeight.w500,
                                             ),
@@ -429,7 +424,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     ],
                                   ],
                                 ),
-                                const SizedBox(height: 26),
+                                const SizedBox(height: 30),
                                 _buildSectionContent(userData),
                               ],
                             ),
@@ -460,9 +455,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _avatarFallback(String displayName) {
-    final first = displayName.trim().isNotEmpty
-        ? displayName.trim()[0].toUpperCase()
-        : 'U';
+    final first =
+        displayName.trim().isNotEmpty ? displayName.trim()[0].toUpperCase() : 'U';
 
     return Container(
       color: const Color(0xFF141419),
@@ -491,10 +485,8 @@ class _FavoritesSection extends StatelessWidget {
       stream: libraryService.watchFavorites(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const _SectionSurface(
-            child: Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
           );
         }
 
@@ -513,39 +505,12 @@ class _FavoritesSection extends StatelessWidget {
           return const _SectionSurface(
             child: _LargeInfoBlock(
               title: 'No favorites yet',
-              body:
-                  'Favorite items will appear here with your rating and review.',
+              body: 'Favorite items will appear here.',
             ),
           );
         }
 
-        return _SectionSurface(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final width = constraints.maxWidth;
-              final count = width > 820
-                  ? 5
-                  : width > 620
-                  ? 4
-                  : 2;
-
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: docs.length,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: count,
-                  mainAxisSpacing: 18,
-                  crossAxisSpacing: 14,
-                  childAspectRatio: 0.48,
-                ),
-                itemBuilder: (context, index) {
-                  return _FavoriteItemCard(data: docs[index].data());
-                },
-              );
-            },
-          ),
-        );
+        return _LibraryItemsGrid(docs: docs);
       },
     );
   }
@@ -562,10 +527,8 @@ class _SavedSection extends StatelessWidget {
       stream: libraryService.watchSaved(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const _SectionSurface(
-            child: Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
           );
         }
 
@@ -584,47 +547,59 @@ class _SavedSection extends StatelessWidget {
           return const _SectionSurface(
             child: _LargeInfoBlock(
               title: 'No saved items yet',
-              body: 'Items you save will appear here for easy access later.',
+              body: 'Items you save will appear here.',
             ),
           );
         }
 
-        return _SectionSurface(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final width = constraints.maxWidth;
-              final count = width > 820
-                  ? 5
-                  : width > 620
-                  ? 4
-                  : 2;
-
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: docs.length,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: count,
-                  mainAxisSpacing: 18,
-                  crossAxisSpacing: 14,
-                  childAspectRatio: 0.48,
-                ),
-                itemBuilder: (context, index) {
-                  return _FavoriteItemCard(data: docs[index].data());
-                },
-              );
-            },
-          ),
-        );
+        return _LibraryItemsGrid(docs: docs);
       },
     );
   }
 }
 
-class _FavoriteItemCard extends StatelessWidget {
+class _LibraryItemsGrid extends StatelessWidget {
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+
+  const _LibraryItemsGrid({required this.docs});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxWidth = constraints.maxWidth < 1400
+              ? 1400.0
+              : constraints.maxWidth;
+
+          return SizedBox(
+            width: maxWidth,
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: docs.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 6, 
+                crossAxisSpacing: 18,
+                mainAxisSpacing: 42,
+                childAspectRatio: 0.44,
+              ),
+              itemBuilder: (context, index) {
+                return _LibraryItemCard(data: docs[index].data());
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _LibraryItemCard extends StatelessWidget {
   final Map<String, dynamic> data;
 
-  const _FavoriteItemCard({required this.data});
+  const _LibraryItemCard({required this.data});
 
   OnboardingMediaItem _toItem() {
     return OnboardingMediaItem(
@@ -636,17 +611,32 @@ class _FavoriteItemCard extends StatelessWidget {
           .toList(),
       tags: ((data['tags'] as List?) ?? []).map((e) => e.toString()).toList(),
       imageUrl: (data['imageUrl'] ?? '').toString(),
-      source: 'library',
+      source: (data['source'] ?? 'library').toString(),
       description: (data['description'] ?? '').toString(),
     );
+  }
+
+  String _defaultStatus(String domain) {
+    switch (domain) {
+      case 'movies':
+      case 'shows':
+        return 'Want to watch';
+      case 'books':
+        return 'Want to read';
+      case 'games':
+        return 'Want to try';
+      default:
+        return 'Want to try';
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final item = _toItem();
     final rating = ((data['userRating'] ?? 0) as num).toDouble();
-    final review = (data['review'] ?? '').toString();
-    final status = (data['status'] ?? '').toString();
+    final review =
+        (data['review'] ?? data['lastReview'] ?? '').toString().trim();
+    final status = (data['status'] ?? _defaultStatus(item.domain)).toString();
 
     return GestureDetector(
       onTap: () {
@@ -661,75 +651,90 @@ class _FavoriteItemCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
+              flex: 72,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: item.imageUrl.isNotEmpty
+                borderRadius: BorderRadius.circular(17),
+                child: item.imageUrl.trim().isNotEmpty
                     ? Image.network(
                         item.imageUrl,
                         width: double.infinity,
+                        height: double.infinity,
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => _posterFallback(),
                       )
                     : _posterFallback(),
               ),
             ),
-            const SizedBox(height: 9),
-            Text(
-              item.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontSize: 12.8,
-                fontWeight: FontWeight.w800,
-                height: 1.25,
+            const SizedBox(height: 11),
+            SizedBox(
+              height: 42,
+              child: Text(
+                item.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  height: 1.25,
+                  letterSpacing: -0.2,
+                ),
               ),
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: 7),
             Row(
               children: [
                 const Icon(
                   Icons.star_rounded,
                   color: Color(0xFFFF8B3D),
-                  size: 15,
+                  size: 16,
                 ),
                 const SizedBox(width: 4),
-                Text(
-                  rating <= 0 ? 'No rating' : rating.toStringAsFixed(1),
-                  style: GoogleFonts.inter(
-                    color: Colors.white.withOpacity(0.70),
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
+                Expanded(
+                  child: Text(
+                    rating <= 0
+                        ? 'No rating'
+                        : '${rating.toStringAsFixed(1)} / 5',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.75),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ],
             ),
-            if (status.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                status,
-                maxLines: 1,
+            const SizedBox(height: 6),
+            Text(
+              status,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                color: const Color(0xFFFF8B3D),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 44,
+              child: Text(
+                review.isEmpty ? 'No review yet.' : review,
+                maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.inter(
-                  color: const Color(0xFFFF8B3D).withOpacity(0.82),
-                  fontSize: 11.2,
-                  fontWeight: FontWeight.w700,
+                  color: review.isEmpty
+                      ? Colors.white.withOpacity(0.35)
+                      : Colors.white.withOpacity(0.55),
+                  fontSize: 11.5,
+                  height: 1.35,
+                  fontStyle:
+                      review.isEmpty ? FontStyle.italic : FontStyle.normal,
                 ),
               ),
-            ],
-            if (review.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                review,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.46),
-                  fontSize: 11,
-                  height: 1.3,
-                ),
-              ),
-            ],
+            ),
           ],
         ),
       ),
@@ -739,6 +744,7 @@ class _FavoriteItemCard extends StatelessWidget {
   Widget _posterFallback() {
     return Container(
       width: double.infinity,
+      height: double.infinity,
       color: Colors.white.withOpacity(0.06),
       child: const Center(
         child: Icon(Icons.image_outlined, color: Colors.white54),
@@ -758,10 +764,8 @@ class _ActivitySection extends StatelessWidget {
       stream: libraryService.watchActivity(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const _SectionSurface(
-            child: Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
           );
         }
 
@@ -769,8 +773,7 @@ class _ActivitySection extends StatelessWidget {
           return const _SectionSurface(
             child: _LargeInfoBlock(
               title: 'Unable to load activity',
-              body:
-                  'Check your Firestore index/rules for users/{uid}/libraryItems.',
+              body: 'Check your Firestore rules.',
             ),
           );
         }
@@ -781,19 +784,15 @@ class _ActivitySection extends StatelessWidget {
           return const _SectionSurface(
             child: _LargeInfoBlock(
               title: 'No activity yet',
-              body:
-                  'Likes, favorites, ratings, reviews, and status updates will show here.',
+              body: 'Your interactions will appear here.',
             ),
           );
         }
 
-        return _SectionSurface(
-          child: Column(
-            children: docs.map((doc) {
-              final data = doc.data();
-              return _ActivityCard(data: data);
-            }).toList(),
-          ),
+        return Column(
+          children: docs.map((doc) {
+            return _ActivityCard(data: doc.data());
+          }).toList(),
         );
       },
     );
@@ -809,23 +808,23 @@ class _ActivityCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final title = (data['title'] ?? 'Untitled').toString();
     final imageUrl = (data['imageUrl'] ?? '').toString();
-    final activityType = (data['activityType'] ?? 'updated').toString();
-    final rating = ((data['userRating'] ?? 0) as num).toDouble();
-    final review = (data['review'] ?? '').toString();
-    final status = (data['status'] ?? '').toString();
+    final type = (data['activityType'] ?? data['type'] ?? 'updated').toString();
+    final rating =
+        ((data['userRating'] ?? data['rating'] ?? 0) as num).toDouble();
+    final review = (data['review'] ?? data['text'] ?? '').toString();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.035),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.045)),
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
       ),
       child: Row(
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             child: imageUrl.isNotEmpty
                 ? Image.network(
                     imageUrl,
@@ -836,18 +835,18 @@ class _ActivityCard extends StatelessWidget {
                   )
                 : _activityImageFallback(),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  activityType.toUpperCase(),
+                  type.toUpperCase(),
                   style: GoogleFonts.inter(
                     color: const Color(0xFFFF8B3D),
-                    fontSize: 10.5,
+                    fontSize: 10,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: 0.8,
+                    letterSpacing: 0.7,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -857,40 +856,28 @@ class _ActivityCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
                     color: Colors.white,
-                    fontSize: 14,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                if (status.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    status,
-                    style: GoogleFonts.inter(
-                      color: Colors.white.withOpacity(0.58),
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
                 if (rating > 0) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(
                     'Rated ${rating.toStringAsFixed(1)} / 5',
                     style: GoogleFonts.inter(
-                      color: Colors.white.withOpacity(0.58),
-                      fontSize: 12.5,
+                      color: Colors.white.withOpacity(0.6),
+                      fontSize: 12,
                     ),
                   ),
                 ],
                 if (review.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(
                     review,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
-                      color: Colors.white.withOpacity(0.52),
-                      fontSize: 12.5,
+                      color: Colors.white.withOpacity(0.5),
+                      fontSize: 12,
                       height: 1.35,
                     ),
                   ),
@@ -908,7 +895,7 @@ class _ActivityCard extends StatelessWidget {
       width: 52,
       height: 72,
       color: Colors.white.withOpacity(0.06),
-      child: const Icon(Icons.image_outlined, color: Colors.white38, size: 20),
+      child: const Icon(Icons.image, color: Colors.white38, size: 20),
     );
   }
 }
@@ -992,7 +979,11 @@ class _TopTextButton extends StatelessWidget {
   final VoidCallback? onTap;
   final bool active;
 
-  const _TopTextButton({required this.label, this.onTap, this.active = false});
+  const _TopTextButton({
+    required this.label,
+    this.onTap,
+    this.active = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1049,7 +1040,10 @@ class _CountTextBlock extends StatelessWidget {
   final String value;
   final String label;
 
-  const _CountTextBlock({required this.value, required this.label});
+  const _CountTextBlock({
+    required this.value,
+    required this.label,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1086,7 +1080,7 @@ class _SectionSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(30),
+      borderRadius: BorderRadius.circular(26),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Container(
@@ -1094,7 +1088,7 @@ class _SectionSurface extends StatelessWidget {
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.04),
-            borderRadius: BorderRadius.circular(30),
+            borderRadius: BorderRadius.circular(26),
             border: Border.all(color: Colors.white.withOpacity(0.05)),
           ),
           child: child,
@@ -1108,7 +1102,10 @@ class _LargeInfoBlock extends StatelessWidget {
   final String title;
   final String body;
 
-  const _LargeInfoBlock({required this.title, required this.body});
+  const _LargeInfoBlock({
+    required this.title,
+    required this.body,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1117,27 +1114,29 @@ class _LargeInfoBlock extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.035),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(22),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
             title,
+            textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.5,
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 9),
           Text(
             body,
+            textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               color: Colors.white.withOpacity(0.62),
               fontSize: 14,
-              height: 1.65,
+              height: 1.6,
             ),
           ),
         ],

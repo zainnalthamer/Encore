@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/onboarding_media_item.dart';
 
@@ -63,6 +64,7 @@ class UserLibraryService {
     required OnboardingMediaItem item,
     required bool saved,
   }) async {
+    final userRef = _firestore.collection('users').doc(uid);
     final libraryRef = _libraryDoc(item.id);
     final statsRef = _itemStatsDoc(item.id);
 
@@ -74,7 +76,14 @@ class UserLibraryService {
         ..._itemData(item),
         'isSaved': saved,
         'updatedAt': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
+        if (!snapshot.exists) 'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      transaction.set(userRef, {
+        'savedItemIds.${item.domain}': saved
+            ? FieldValue.arrayUnion([item.id])
+            : FieldValue.arrayRemove([item.id]),
+        'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
       if (oldSaved != saved) {
@@ -86,7 +95,7 @@ class UserLibraryService {
       }
     });
 
-    await _logActivity(
+    await _safeLogActivity(
       item: item,
       type: saved ? 'saved' : 'removed saved',
       text: saved ? 'Saved this item' : 'Removed from saved',
@@ -97,6 +106,7 @@ class UserLibraryService {
     required OnboardingMediaItem item,
     required bool favorite,
   }) async {
+    final userRef = _firestore.collection('users').doc(uid);
     final libraryRef = _libraryDoc(item.id);
     final statsRef = _itemStatsDoc(item.id);
 
@@ -110,7 +120,15 @@ class UserLibraryService {
         'isSaved': true,
         'isFavorite': favorite,
         'updatedAt': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
+        if (!snapshot.exists) 'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      transaction.set(userRef, {
+        'savedItemIds.${item.domain}': FieldValue.arrayUnion([item.id]),
+        'favoriteItemIds.${item.domain}': favorite
+            ? FieldValue.arrayUnion([item.id])
+            : FieldValue.arrayRemove([item.id]),
+        'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
       final statsUpdate = <String, dynamic>{
@@ -119,7 +137,8 @@ class UserLibraryService {
       };
 
       if (oldFavorite != favorite) {
-        statsUpdate['favoriteCount'] = FieldValue.increment(favorite ? 1 : -1);
+        statsUpdate['favoriteCount'] =
+            FieldValue.increment(favorite ? 1 : -1);
       }
 
       if (!oldSaved) {
@@ -129,7 +148,7 @@ class UserLibraryService {
       transaction.set(statsRef, statsUpdate, SetOptions(merge: true));
     });
 
-    await _logActivity(
+    await _safeLogActivity(
       item: item,
       type: favorite ? 'favorited' : 'unfavorited',
       text: favorite ? 'Added to favorites' : 'Removed from favorites',
@@ -148,7 +167,7 @@ class UserLibraryService {
       'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
-    await _logActivity(
+    await _safeLogActivity(
       item: item,
       type: 'status',
       text: status,
@@ -159,43 +178,21 @@ class UserLibraryService {
     required OnboardingMediaItem item,
     required double rating,
   }) async {
-    final libraryRef = _libraryDoc(item.id);
-    final statsRef = _itemStatsDoc(item.id);
+    await _libraryDoc(item.id).set({
+      ..._itemData(item),
+      'isSaved': true,
+      'userRating': rating,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
 
-    await _firestore.runTransaction((transaction) async {
-      final snapshot = await transaction.get(libraryRef);
-      final oldRating = ((snapshot.data()?['userRating'] ?? 0) as num).toDouble();
-      final oldSaved = snapshot.data()?['isSaved'] == true;
-
-      final ratingDelta = rating - oldRating;
-      final isNewRating = oldRating <= 0 && rating > 0;
-
-      transaction.set(libraryRef, {
-        ..._itemData(item),
-        'isSaved': true,
-        'userRating': rating,
-        'updatedAt': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      final statsUpdate = <String, dynamic>{
-        ..._itemData(item),
-        'ratingSum': FieldValue.increment(ratingDelta),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      if (isNewRating) {
-        statsUpdate['ratingCount'] = FieldValue.increment(1);
-      }
-
-      if (!oldSaved) {
-        statsUpdate['saveCount'] = FieldValue.increment(1);
-      }
-
-      transaction.set(statsRef, statsUpdate, SetOptions(merge: true));
+    await _safeStatsUpdate(item, {
+      'ratingSum': FieldValue.increment(rating),
+      'ratingCount': FieldValue.increment(1),
+      'saveCount': FieldValue.increment(1),
     });
 
-    await _logActivity(
+    await _safeLogActivity(
       item: item,
       type: 'rated',
       text: 'Rated ${rating.toStringAsFixed(1)} / 5',
@@ -234,18 +231,17 @@ class UserLibraryService {
       'isSaved': true,
       'userRating': rating,
       'lastReview': cleanReview,
+      'review': cleanReview,
       'reviewCount': FieldValue.increment(1),
       'updatedAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
-    await _itemStatsDoc(item.id).set({
-      ..._itemData(item),
+    await _safeStatsUpdate(item, {
       'reviewCount': FieldValue.increment(1),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    });
 
-    await _logActivity(
+    await _safeLogActivity(
       item: item,
       type: 'reviewed',
       text: cleanReview,
@@ -265,33 +261,54 @@ class UserLibraryService {
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
-    await _itemStatsDoc(item.id).set({
+    await _safeStatsUpdate(item, {
       'reviewCount': FieldValue.increment(-1),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    });
 
-    await _logActivity(
+    await _safeLogActivity(
       item: item,
       type: 'deleted review',
       text: 'Deleted a review',
     );
   }
 
-  Future<void> _logActivity({
+  Future<void> _safeStatsUpdate(
+    OnboardingMediaItem item,
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      await _itemStatsDoc(item.id).set({
+        ..._itemData(item),
+        ...data,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Stats update failed: $e');
+    }
+  }
+
+  Future<void> _safeLogActivity({
     required OnboardingMediaItem item,
     required String type,
     required String text,
     double? rating,
     String? reviewId,
   }) async {
-    await _activity.add({
-      ..._itemData(item),
-      'type': type,
-      'text': text,
-      'rating': rating,
-      'reviewId': reviewId,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      await _activity.add({
+        ..._itemData(item),
+        'type': type,
+        'activityType': type,
+        'text': text,
+        'review': text,
+        'rating': rating,
+        'userRating': rating,
+        'reviewId': reviewId,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('Activity log failed: $e');
+    }
   }
 
   Map<String, dynamic> _itemData(OnboardingMediaItem item) {
