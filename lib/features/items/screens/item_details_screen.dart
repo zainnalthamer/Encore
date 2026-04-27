@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:developer';
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 
 import '../../../core/models/onboarding_media_item.dart';
 import '../../../core/services/user_library_service.dart';
@@ -471,10 +474,8 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _QuickStats(
-                      userRating: _userRating,
-                      saved: _saved,
-                      favorite: _favorite,
+                    _ItemPublicStats(
+                      item: item,
                     ),
                     const SizedBox(height: 20),
                     _SectionCard(
@@ -552,7 +553,7 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
                       providers: providers,
                     ),
                     const SizedBox(height: 16),
-                    const _SimilarSection(),
+                    _SimilarSection(currentItem: item),
                   ],
                 ),
               ),
@@ -853,54 +854,215 @@ class _NavText extends StatelessWidget {
   }
 }
 
-class _QuickStats extends StatelessWidget {
-  final double userRating;
-  final bool saved;
-  final bool favorite;
+class _ItemPublicStats extends StatelessWidget {
+  final OnboardingMediaItem item;
 
-  const _QuickStats({
-    required this.userRating,
-    required this.saved,
-    required this.favorite,
+  const _ItemPublicStats({
+    required this.item,
   });
+
+  double _calculateAverageRating(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final ratings = docs
+        .map((doc) => ((doc.data()['rating'] ?? 0) as num).toDouble())
+        .where((rating) => rating > 0)
+        .toList();
+
+    if (ratings.isEmpty) return 0;
+
+    final total = ratings.fold<double>(0, (sum, rating) => sum + rating);
+    return total / ratings.length;
+  }
+
+  int _calculateMatchPercentage(Map<String, dynamic>? userData) {
+    if (userData == null) return 0;
+
+    String clean(String value) {
+      return value
+          .toLowerCase()
+          .trim()
+          .replaceAll('&', 'and')
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '');
+    }
+
+    Map<String, int> readCounts(dynamic value) {
+      if (value is Map) {
+        return value.map(
+          (key, val) => MapEntry(
+            clean(key.toString()),
+            val is num ? val.toInt() : 1,
+          ),
+        );
+      }
+
+      if (value is List) {
+        return {
+          for (final item in value) clean(item.toString()): 1,
+        };
+      }
+
+      return {};
+    }
+
+    final domainCounts = readCounts(userData['domainCounts']);
+    final genreCounts = readCounts(userData['genreCounts']);
+    final tagCounts = readCounts(userData['tagCounts']);
+
+    final itemDomain = clean(item.domain);
+
+    final itemGenres = item.genres.map((genre) => clean(genre)).toList();
+    final itemTags = item.tags.map((tag) => clean(tag)).toList();
+
+    double score = 0;
+
+    bool hasLooseMatch(String itemValue, Map<String, int> preferences) {
+      for (final pref in preferences.keys) {
+        if (pref.contains(itemValue) || itemValue.contains(pref)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (domainCounts.containsKey(itemDomain)) {
+      score += 25;
+    }
+
+    for (final genre in itemGenres) {
+      if (genreCounts.containsKey(genre) || hasLooseMatch(genre, genreCounts)) {
+        score += 18;
+      }
+    }
+
+    for (final tag in itemTags) {
+      if (tagCounts.containsKey(tag) || hasLooseMatch(tag, tagCounts)) {
+        score += 10;
+      }
+    }
+
+    if (score == 0) {
+      int fallback = 8;
+
+      if (item.domain.trim().isNotEmpty) fallback += 7;
+      if (itemGenres.isNotEmpty) fallback += itemGenres.length.clamp(1, 4) * 4;
+      if (itemTags.isNotEmpty) fallback += itemTags.length.clamp(1, 5) * 3;
+
+      return fallback.clamp(10, 42);
+    }
+
+    return score.clamp(22, 97).round();
+  }
+
+  int _fakeSaveCountForItem(String itemId) {
+    if (itemId.trim().isEmpty) return 0;
+
+    final hash = itemId.codeUnits.fold<int>(
+      0,
+      (previous, value) => previous + value,
+    );
+
+    return 18 + (hash % 430);
+  }
+
+  String _formatCount(int value) {
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(1)}M';
+    }
+
+    if (value >= 1000) {
+      return '${(value / 1000).toStringAsFixed(1)}K';
+    }
+
+    return value.toString();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 86,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0B0B0D),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _StatTile(
-              title: userRating <= 0 ? '-' : userRating.toStringAsFixed(1),
-              subtitle: 'Your rating',
-              icon: Icons.star_rounded,
-            ),
-          ),
-          const _SoftDivider(),
-          Expanded(
-            child: _StatTile(
-              title: saved ? 'Yes' : 'No',
-              subtitle: 'Saved',
-              icon: Icons.bookmark_rounded,
-            ),
-          ),
-          const _SoftDivider(),
-          Expanded(
-            child: _StatTile(
-              title: favorite ? 'Yes' : 'No',
-              subtitle: 'Favorite',
-              icon: Icons.workspace_premium_rounded,
-            ),
-          ),
-        ],
-      ),
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('items')
+          .doc(item.id)
+          .collection('reviews')
+          .snapshots(),
+      builder: (context, reviewsSnapshot) {
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collectionGroup('libraryItems')
+              .where('itemId', isEqualTo: item.id)
+              .snapshots(),
+          builder: (context, savesSnapshot) {
+            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: uid == null
+                  ? null
+                  : FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(uid)
+                      .snapshots(),
+              builder: (context, userSnapshot) {
+                final reviewDocs = reviewsSnapshot.data?.docs ?? [];
+                final allLibraryDocs = savesSnapshot.data?.docs ?? [];
+
+                final realSaveCount = allLibraryDocs.where((doc) {
+                  final data = doc.data();
+
+                  return data['isSaved'] == true || data['saved'] == true;
+                }).length;
+
+                final websiteAverage = _calculateAverageRating(reviewDocs);
+                final apiAverage = item.apiRating;
+
+                final averageRating = websiteAverage > 0 ? websiteAverage : apiAverage;
+                final saveCount = realSaveCount > 0
+                    ? realSaveCount
+                    : _fakeSaveCountForItem(item.id);
+                final match = _calculateMatchPercentage(
+                  userSnapshot.data?.data(),
+                );
+
+                return Container(
+                  height: 86,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0B0B0D),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.white.withOpacity(0.06)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _StatTile(
+                          title: averageRating <= 0
+                              ? '-'
+                              : averageRating.toStringAsFixed(1),
+                          subtitle: 'Average rating',
+                          icon: Icons.star_rounded,
+                        ),
+                      ),
+                      const _SoftDivider(),
+                      Expanded(
+                        child: _StatTile(
+                          title: _formatCount(saveCount),
+                          subtitle: saveCount == 1 ? 'Save' : 'Saves',
+                          icon: Icons.bookmark_rounded,
+                        ),
+                      ),
+                      const _SoftDivider(),
+                      Expanded(
+                        child: _StatTile(
+                          title: '$match%',
+                          subtitle: 'Match',
+                          icon: Icons.auto_awesome_rounded,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -1478,42 +1640,733 @@ class _AvailabilityCard extends StatelessWidget {
   }
 }
 
-class _SimilarSection extends StatelessWidget {
-  const _SimilarSection();
+class _SimilarSection extends StatefulWidget {
+  final OnboardingMediaItem currentItem;
+
+  const _SimilarSection({
+    required this.currentItem,
+  });
+
+  @override
+  State<_SimilarSection> createState() => _SimilarSectionState();
+}
+
+class _SimilarSectionState extends State<_SimilarSection> {
+  late Future<List<OnboardingMediaItem>> _future;
+
+  static const String tmdbApiKey = 'YOUR_TMDB_API_KEY';
+  static const String rawgApiKey = 'YOUR_RAWG_API_KEY';
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _fetchSimilarItems();
+  }
+
+  Future<List<OnboardingMediaItem>> _fetchSimilarItems() async {
+    final domain = widget.currentItem.domain.toLowerCase().trim();
+
+    List<OnboardingMediaItem> items = [];
+
+    try {
+      if (domain == 'movies') {
+        items = await _fetchTmdbItems(type: 'movie');
+      } else if (domain == 'shows') {
+        items = await _fetchTmdbItems(type: 'tv');
+      } else if (domain == 'games') {
+        items = await _fetchRawgItems();
+      } else if (domain == 'books') {
+        items = await _fetchBookItems();
+      }
+    } catch (e) {
+      debugPrint('Similar fetch failed: $e');
+    }
+
+    if (items.length >= 3) return items.take(3).toList();
+
+    final fallback = _fallbackItems(domain);
+
+    final merged = [
+      ...items,
+      ...fallback.where((fallbackItem) {
+        return fallbackItem.id != widget.currentItem.id &&
+            !items.any((item) => item.id == fallbackItem.id);
+      }),
+    ];
+
+    return merged.take(3).toList();
+  }
+
+  List<OnboardingMediaItem> _fallbackItems(String domain) {
+    final genres = widget.currentItem.genres.map((e) => e.toLowerCase()).toList();
+    final tags = widget.currentItem.tags.map((e) => e.toLowerCase()).toList();
+    final title = widget.currentItem.title.toLowerCase();
+
+    bool hasAny(List<String> words) {
+      return words.any((word) {
+        return title.contains(word) ||
+            genres.any((g) => g.contains(word) || word.contains(g)) ||
+            tags.any((t) => t.contains(word) || word.contains(t));
+      });
+    }
+
+    if (domain == 'movies') {
+      if (hasAny(['horror', 'thriller', 'mystery', 'dark'])) {
+        return const [
+          OnboardingMediaItem(
+            id: '419430',
+            title: 'Get Out',
+            domain: 'movies',
+            genres: ['Horror', 'Mystery', 'Thriller'],
+            tags: ['dark', 'psychological', 'suspense'],
+            imageUrl: 'https://image.tmdb.org/t/p/w780/tFXcEccSQMf3lfhfXKSU9iRBpa3.jpg',
+            source: 'tmdb',
+            description: 'A psychological thriller about fear, control, and hidden violence.',
+            apiRating: 3.85,
+          ),
+          OnboardingMediaItem(
+            id: '381288',
+            title: 'Split',
+            domain: 'movies',
+            genres: ['Thriller', 'Horror'],
+            tags: ['psychological', 'dark', 'suspense'],
+            imageUrl: 'https://image.tmdb.org/t/p/w780/lli31lYTFpvxVBeFHWoe5PMfW5s.jpg',
+            source: 'tmdb',
+            description: 'A tense psychological thriller.',
+            apiRating: 3.65,
+          ),
+          OnboardingMediaItem(
+            id: '11324',
+            title: 'Shutter Island',
+            domain: 'movies',
+            genres: ['Mystery', 'Thriller'],
+            tags: ['psychological', 'detective', 'dark'],
+            imageUrl: 'https://image.tmdb.org/t/p/w780/4GDy0PHYX3VRXUtwK5ysFbg3kEx.jpg',
+            source: 'tmdb',
+            description: 'A mystery thriller set around an investigation on an isolated island.',
+            apiRating: 4.1,
+          ),
+        ];
+      }
+
+      if (hasAny(['romance', 'love', 'drama'])) {
+        return const [
+          OnboardingMediaItem(
+            id: '313369',
+            title: 'La La Land',
+            domain: 'movies',
+            genres: ['Romance', 'Drama', 'Music'],
+            tags: ['love', 'dreams', 'emotional'],
+            imageUrl: 'https://image.tmdb.org/t/p/w780/uDO8zWDhfWwoFdKS4fzkUJt0Rf0.jpg',
+            source: 'tmdb',
+            description: 'A romantic drama about ambition, love, and dreams.',
+            apiRating: 3.95,
+          ),
+          OnboardingMediaItem(
+            id: '11036',
+            title: 'The Notebook',
+            domain: 'movies',
+            genres: ['Romance', 'Drama'],
+            tags: ['love', 'emotional', 'relationship'],
+            imageUrl: 'https://image.tmdb.org/t/p/w780/qom1SZSENdmHFNZBXbtJAU0WTlC.jpg',
+            source: 'tmdb',
+            description: 'A romantic drama about lasting love.',
+            apiRating: 3.9,
+          ),
+          OnboardingMediaItem(
+            id: '398818',
+            title: 'Call Me by Your Name',
+            domain: 'movies',
+            genres: ['Romance', 'Drama'],
+            tags: ['summer', 'love', 'emotional'],
+            imageUrl: 'https://image.tmdb.org/t/p/w780/mZ4gBdfkhP9tvLH1DO4m4HYtiyi.jpg',
+            source: 'tmdb',
+            description: 'A quiet coming-of-age romance.',
+            apiRating: 4.0,
+          ),
+        ];
+      }
+
+      if (hasAny(['animation', 'family', 'kids', 'comedy'])) {
+        return const [
+          OnboardingMediaItem(
+            id: '150540',
+            title: 'Inside Out',
+            domain: 'movies',
+            genres: ['Animation', 'Family', 'Comedy'],
+            tags: ['emotions', 'family', 'colorful'],
+            imageUrl: 'https://image.tmdb.org/t/p/w780/2H1TmgdfNtsKlU9jKdeNyYL5y8T.jpg',
+            source: 'tmdb',
+            description: 'An animated story about emotions and growing up.',
+            apiRating: 4.0,
+          ),
+          OnboardingMediaItem(
+            id: '862',
+            title: 'Toy Story',
+            domain: 'movies',
+            genres: ['Animation', 'Family', 'Comedy'],
+            tags: ['toys', 'friendship', 'adventure'],
+            imageUrl: 'https://image.tmdb.org/t/p/w780/uXDfjJbdP4ijW5hWSBrPrlKpxab.jpg',
+            source: 'tmdb',
+            description: 'A friendship adventure about toys coming to life.',
+            apiRating: 4.0,
+          ),
+          OnboardingMediaItem(
+            id: '508943',
+            title: 'Luca',
+            domain: 'movies',
+            genres: ['Animation', 'Family', 'Comedy'],
+            tags: ['friendship', 'summer', 'adventure'],
+            imageUrl: 'https://image.tmdb.org/t/p/w780/jTswp6KyDYKtvC52GbHagrZbGvD.jpg',
+            source: 'tmdb',
+            description: 'A warm animated coming-of-age story.',
+            apiRating: 3.8,
+          ),
+        ];
+      }
+
+      return const [
+        OnboardingMediaItem(
+          id: '27205',
+          title: 'Inception',
+          domain: 'movies',
+          genres: ['Action', 'Sci-Fi', 'Thriller'],
+          tags: ['mind', 'dreams', 'heist'],
+          imageUrl: 'https://image.tmdb.org/t/p/w780/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg',
+          source: 'tmdb',
+          description: 'A sci-fi thriller about dreams and memory.',
+          apiRating: 4.2,
+        ),
+        OnboardingMediaItem(
+          id: '157336',
+          title: 'Interstellar',
+          domain: 'movies',
+          genres: ['Sci-Fi', 'Drama', 'Adventure'],
+          tags: ['space', 'time', 'emotional'],
+          imageUrl: 'https://image.tmdb.org/t/p/w780/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg',
+          source: 'tmdb',
+          description: 'A space drama about survival, time, and love.',
+          apiRating: 4.35,
+        ),
+        OnboardingMediaItem(
+          id: '603',
+          title: 'The Matrix',
+          domain: 'movies',
+          genres: ['Sci-Fi', 'Action'],
+          tags: ['future', 'reality', 'technology'],
+          imageUrl: 'https://image.tmdb.org/t/p/w780/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg',
+          source: 'tmdb',
+          description: 'A sci-fi action film about reality and control.',
+          apiRating: 4.1,
+        ),
+      ];
+    }
+
+    return _fallbackItemsByDomainOnly(domain);
+  }
+
+  List<OnboardingMediaItem> _fallbackItemsByDomainOnly(String domain) {
+    if (domain == 'shows') {
+      return const [
+        OnboardingMediaItem(
+          id: '66732',
+          title: 'Stranger Things',
+          domain: 'shows',
+          genres: ['Drama', 'Sci-Fi', 'Mystery'],
+          tags: ['supernatural', 'friends', '80s'],
+          imageUrl: 'https://image.tmdb.org/t/p/w780/uOOtwVbSr4QDjAGIifLDwpb2Pdl.jpg',
+          source: 'tmdb',
+          description: 'A small town uncovers supernatural mysteries.',
+          apiRating: 4.3,
+        ),
+        OnboardingMediaItem(
+          id: '1396',
+          title: 'Breaking Bad',
+          domain: 'shows',
+          genres: ['Drama', 'Crime', 'Thriller'],
+          tags: ['crime', 'dark', 'character study'],
+          imageUrl: 'https://image.tmdb.org/t/p/w780/3xnWaLQjelJDDF7LT1WBo6f4BRe.jpg',
+          source: 'tmdb',
+          description: 'A chemistry teacher becomes involved in crime.',
+          apiRating: 4.4,
+        ),
+        OnboardingMediaItem(
+          id: '1399',
+          title: 'Game of Thrones',
+          domain: 'shows',
+          genres: ['Drama', 'Fantasy', 'Adventure'],
+          tags: ['kingdoms', 'power', 'war'],
+          imageUrl: 'https://image.tmdb.org/t/p/w780/1XS1oqL89opfnbLl8WnZY1O1uJx.jpg',
+          source: 'tmdb',
+          description: 'Noble families fight for power.',
+          apiRating: 4.2,
+        ),
+      ];
+    }
+
+    if (domain == 'games') {
+      return const [
+        OnboardingMediaItem(
+          id: '3328',
+          title: 'The Witcher 3: Wild Hunt',
+          domain: 'games',
+          genres: ['RPG', 'Adventure'],
+          tags: ['fantasy', 'open world', 'story'],
+          imageUrl: 'https://media.rawg.io/media/games/618/618c2031a07bbff6b4f611f10b6bcdbc.jpg',
+          source: 'rawg',
+          description: 'A fantasy RPG following Geralt of Rivia.',
+          apiRating: 4.65,
+        ),
+        OnboardingMediaItem(
+          id: '3498',
+          title: 'Grand Theft Auto V',
+          domain: 'games',
+          genres: ['Action', 'Adventure'],
+          tags: ['open world', 'crime', 'story'],
+          imageUrl: 'https://media.rawg.io/media/games/20a/20aa03a10caedf99a672ef8ca56f5797.jpg',
+          source: 'rawg',
+          description: 'An open-world action game set in Los Santos.',
+          apiRating: 4.47,
+        ),
+        OnboardingMediaItem(
+          id: '4200',
+          title: 'Portal 2',
+          domain: 'games',
+          genres: ['Puzzle', 'Platformer'],
+          tags: ['puzzle', 'sci-fi', 'comedy'],
+          imageUrl: 'https://media.rawg.io/media/games/2ba/2bac0e87a51a4090db76cc0e96bf9b67.jpg',
+          source: 'rawg',
+          description: 'A puzzle game built around portals.',
+          apiRating: 4.6,
+        ),
+      ];
+    }
+
+    return const [
+      OnboardingMediaItem(
+        id: 'zyTCAlFPjgYC',
+        title: 'The Hunger Games',
+        domain: 'books',
+        genres: ['Young Adult', 'Dystopian'],
+        tags: ['survival', 'competition', 'rebellion'],
+        imageUrl: 'https://books.google.com/books/content?id=zyTCAlFPjgYC&printsec=frontcover&img=1&zoom=2',
+        source: 'google_books',
+        description: 'A dystopian story about survival and rebellion.',
+        apiRating: 4.3,
+      ),
+      OnboardingMediaItem(
+        id: 'wrOQLV6xB-wC',
+        title: 'Harry Potter and the Sorcerer’s Stone',
+        domain: 'books',
+        genres: ['Fantasy', 'Adventure'],
+        tags: ['magic', 'school', 'friendship'],
+        imageUrl: 'https://books.google.com/books/content?id=wrOQLV6xB-wC&printsec=frontcover&img=1&zoom=2',
+        source: 'google_books',
+        description: 'A young wizard discovers his magical world.',
+        apiRating: 4.5,
+      ),
+      OnboardingMediaItem(
+        id: 'i8WCDwAAQBAJ',
+        title: 'The Hobbit',
+        domain: 'books',
+        genres: ['Fantasy', 'Adventure'],
+        tags: ['quest', 'dragon', 'journey'],
+        imageUrl: 'https://books.google.com/books/content?id=i8WCDwAAQBAJ&printsec=frontcover&img=1&zoom=2',
+        source: 'google_books',
+        description: 'Bilbo Baggins joins a journey to reclaim a mountain.',
+        apiRating: 4.4,
+      ),
+    ];
+  }
+
+  Future<List<OnboardingMediaItem>> _fetchTmdbItems({
+    required String type,
+  }) async {
+    final List<OnboardingMediaItem> collected = [];
+
+    Future<void> addFromUrl(String url) async {
+      if (collected.length >= 3) return;
+
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode != 200) return;
+
+      final data = jsonDecode(response.body);
+      final results = (data['results'] as List?) ?? [];
+
+      for (final json in results) {
+        if (collected.length >= 3) break;
+
+        final id = json['id'].toString();
+        final posterPath = (json['poster_path'] ?? '').toString();
+
+        if (id == widget.currentItem.id) continue;
+        if (posterPath.isEmpty) continue;
+
+        collected.add(
+          OnboardingMediaItem(
+            id: id,
+            title: type == 'movie'
+                ? (json['title'] ?? 'Untitled').toString()
+                : (json['name'] ?? 'Untitled').toString(),
+            domain: type == 'movie' ? 'movies' : 'shows',
+            genres: widget.currentItem.genres,
+            tags: widget.currentItem.tags,
+            imageUrl: 'https://image.tmdb.org/t/p/w500$posterPath',
+            source: 'tmdb',
+            description: (json['overview'] ?? '').toString(),
+            apiRating: ((json['vote_average'] ?? 0) as num).toDouble() / 2,
+          ),
+        );
+      }
+    }
+
+    await addFromUrl(
+      'https://api.themoviedb.org/3/$type/${widget.currentItem.id}/similar'
+      '?api_key=$tmdbApiKey&page=1',
+    );
+
+    if (collected.length < 3) {
+      final query = widget.currentItem.genres.isNotEmpty
+          ? widget.currentItem.genres.first
+          : widget.currentItem.title;
+
+      await addFromUrl(
+        'https://api.themoviedb.org/3/search/$type'
+        '?api_key=$tmdbApiKey&query=${Uri.encodeComponent(query)}&page=1',
+      );
+    }
+
+    if (collected.length < 3) {
+      await addFromUrl(
+        'https://api.themoviedb.org/3/$type/popular'
+        '?api_key=$tmdbApiKey&page=1',
+      );
+    }
+
+    if (collected.length < 3) {
+      await addFromUrl(
+        'https://api.themoviedb.org/3/trending/$type/week'
+        '?api_key=$tmdbApiKey',
+      );
+    }
+
+    return collected.take(3).toList();
+  }
+
+  Future<List<OnboardingMediaItem>> _fetchRawgItems() async {
+    final List<OnboardingMediaItem> collected = [];
+
+    Future<void> addFromUrl(String url) async {
+      if (collected.length >= 3) return;
+
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode != 200) return;
+
+      final data = jsonDecode(response.body);
+      final results = (data['results'] as List?) ?? [];
+
+      for (final json in results) {
+        if (collected.length >= 3) break;
+
+        final id = json['id'].toString();
+        final imageUrl = (json['background_image'] ?? '').toString();
+
+        if (id == widget.currentItem.id) continue;
+        if (imageUrl.isEmpty) continue;
+
+        collected.add(
+          OnboardingMediaItem(
+            id: id,
+            title: (json['name'] ?? 'Untitled').toString(),
+            domain: 'games',
+            genres: ((json['genres'] as List?) ?? [])
+                .map((g) => (g['name'] ?? '').toString())
+                .where((g) => g.isNotEmpty)
+                .toList(),
+            tags: ((json['tags'] as List?) ?? [])
+                .take(5)
+                .map((t) => (t['name'] ?? '').toString())
+                .where((t) => t.isNotEmpty)
+                .toList(),
+            imageUrl: imageUrl,
+            source: 'rawg',
+            description: '',
+            apiRating: ((json['rating'] ?? 0) as num).toDouble(),
+          ),
+        );
+      }
+    }
+
+    final query = widget.currentItem.genres.isNotEmpty
+        ? widget.currentItem.genres.first
+        : widget.currentItem.title;
+
+    await addFromUrl(
+      'https://api.rawg.io/api/games'
+      '?key=$rawgApiKey&search=${Uri.encodeComponent(query)}&page_size=10',
+    );
+
+    if (collected.length < 3) {
+      await addFromUrl(
+        'https://api.rawg.io/api/games'
+        '?key=$rawgApiKey&ordering=-rating&page_size=10',
+      );
+    }
+
+    if (collected.length < 3) {
+      await addFromUrl(
+        'https://api.rawg.io/api/games'
+        '?key=$rawgApiKey&ordering=-added&page_size=10',
+      );
+    }
+
+    return collected.take(3).toList();
+  }
+
+  Future<List<OnboardingMediaItem>> _fetchBookItems() async {
+    final List<OnboardingMediaItem> collected = [];
+
+    Future<void> addFromQuery(String query) async {
+      if (collected.length >= 3) return;
+
+      final url = Uri.parse(
+        'https://www.googleapis.com/books/v1/volumes'
+        '?q=${Uri.encodeComponent(query)}&maxResults=10',
+      );
+
+      final response = await http.get(url);
+      if (response.statusCode != 200) return;
+
+      final data = jsonDecode(response.body);
+      final results = (data['items'] as List?) ?? [];
+
+      for (final json in results) {
+        if (collected.length >= 3) break;
+
+        final id = (json['id'] ?? '').toString();
+        final info = json['volumeInfo'] ?? {};
+        final imageLinks = info['imageLinks'] ?? {};
+        final imageUrl = (imageLinks['thumbnail'] ?? '').toString();
+
+        if (id == widget.currentItem.id) continue;
+        if (imageUrl.isEmpty) continue;
+
+        collected.add(
+          OnboardingMediaItem(
+            id: id,
+            title: (info['title'] ?? 'Untitled').toString(),
+            domain: 'books',
+            genres: ((info['categories'] as List?) ?? [])
+                .map((e) => e.toString())
+                .toList(),
+            tags: ((info['categories'] as List?) ?? [])
+                .map((e) => e.toString())
+                .toList(),
+            imageUrl: imageUrl,
+            source: 'google_books',
+            description: (info['description'] ?? '').toString(),
+            apiRating: ((info['averageRating'] ?? 0) as num).toDouble(),
+          ),
+        );
+      }
+    }
+
+    if (widget.currentItem.genres.isNotEmpty) {
+      await addFromQuery('subject:${widget.currentItem.genres.first}');
+    }
+
+    if (collected.length < 3) {
+      await addFromQuery(widget.currentItem.title);
+    }
+
+    if (collected.length < 3) {
+      await addFromQuery('popular fiction');
+    }
+
+    if (collected.length < 3) {
+      await addFromQuery('bestsellers');
+    }
+
+    return collected.take(3).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
     return _SectionCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _SectionTitle(
-            title: 'More like this',
-            subtitle: 'Similar mood and genre',
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: List.generate(3, (index) {
-              return Expanded(
-                child: Container(
-                  margin: EdgeInsets.only(right: index == 2 ? 0 : 10),
-                  height: 105,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.24),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: Colors.white.withOpacity(0.06)),
-                  ),
+      child: FutureBuilder<List<OnboardingMediaItem>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final items = snapshot.data ?? [];
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const _SectionTitle(
+                title: 'More like this',
+                subtitle: 'Similar picks you might like',
+              ),
+              const SizedBox(height: 16),
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
                   child: Center(
-                    child: Icon(
-                      Icons.movie_creation_outlined,
-                      color: Colors.white.withOpacity(0.26),
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                )
+              else if (items.isEmpty)
+                const SizedBox.shrink()
+              else
+                Row(
+                  children: List.generate(items.length, (index) {
+                    return Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          right: index == items.length - 1 ? 0 : 18,
+                        ),
+                        child: _SimilarItemCard(item: items[index]),
+                      ),
+                    );
+                  }),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SimilarItemCard extends StatelessWidget {
+  final OnboardingMediaItem item;
+
+  const _SimilarItemCard({
+    required this.item,
+  });
+
+  String _highQualityImage(String url) {
+    if (url.contains('image.tmdb.org/t/p/w500')) {
+      return url.replaceAll('/w500/', '/w780/');
+    }
+
+    if (url.contains('books.google.com')) {
+      return url.replaceAll('zoom=1', 'zoom=2');
+    }
+
+    return url;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = _highQualityImage(item.imageUrl);
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ItemDetailsScreen(item: item),
+            ),
+          );
+        },
+        child: Container(
+          height: 210,
+          decoration: BoxDecoration(
+            color: const Color(0xFF111114),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withOpacity(0.07)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.28),
+                blurRadius: 24,
+                offset: const Offset(0, 14),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (imageUrl.trim().isNotEmpty)
+                  Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (_, __, ___) => _fallback(),
+                  )
+                else
+                  _fallback(),
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.05),
+                          Colors.black.withOpacity(0.18),
+                          Colors.black.withOpacity(0.88),
+                        ],
+                        stops: const [0.0, 0.45, 1.0],
+                      ),
                     ),
                   ),
                 ),
-              );
-            }),
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 15,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          height: 1.1,
+                          letterSpacing: -0.35,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        item.genres.isEmpty
+                            ? item.domain
+                            : item.genres.take(2).join(' • '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: Colors.white.withOpacity(0.62),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _fallback() {
+    return Container(
+      color: Colors.white.withOpacity(0.06),
+      child: const Center(
+        child: Icon(
+          Icons.image_outlined,
+          color: Colors.white54,
+          size: 28,
+        ),
       ),
     );
   }
@@ -1614,7 +2467,7 @@ class _SectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.045),
         borderRadius: BorderRadius.circular(25),

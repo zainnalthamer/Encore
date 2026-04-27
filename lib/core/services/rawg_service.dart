@@ -41,6 +41,7 @@ class RawgService {
         tags: tags,
         imageUrl: (map['background_image'] ?? '').toString(),
         source: 'rawg',
+        apiRating: ((map['rating'] ?? 0) as num).toDouble(),
       );
     }).where((item) => item.title.isNotEmpty).toList();
   }

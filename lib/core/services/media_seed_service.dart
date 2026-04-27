@@ -149,6 +149,7 @@ class MediaSeedService {
                 : '',
         source: 'tmdb',
         description: (map['overview'] ?? '').toString(),
+        apiRating: ((map['vote_average'] ?? 0) as num).toDouble() / 2,
       );
     }).where((item) => item.title.isNotEmpty).toList();
   }
@@ -200,6 +201,7 @@ class MediaSeedService {
                 : '',
         source: 'tmdb',
         description: (map['overview'] ?? '').toString(),
+        apiRating: ((map['vote_average'] ?? 0) as num).toDouble() / 2,
       );
     }).where((item) => item.title.isNotEmpty).toList();
   }
@@ -310,6 +312,7 @@ class MediaSeedService {
         imageUrl: (map['background_image'] ?? '').toString(),
         source: 'rawg',
         description: description,
+        apiRating: ((map['rating'] ?? 0) as num).toDouble(),
       );
     }).where((item) => item.title.isNotEmpty && item.imageUrl.isNotEmpty).toList();
   }

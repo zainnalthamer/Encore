@@ -82,6 +82,7 @@ class TmdbService {
             ? '$_imageBase${map['poster_path']}'
             : '',
         source: 'tmdb',
+        apiRating: ((map['vote_average'] ?? 0) as num).toDouble() / 2,
       );
     }).where((item) => item.title.isNotEmpty).toList();
   }
@@ -122,6 +123,7 @@ class TmdbService {
             ? '$_imageBase${map['poster_path']}'
             : '',
         source: 'tmdb',
+        apiRating: ((map['vote_average'] ?? 0) as num).toDouble() / 2,
       );
     }).where((item) => item.title.isNotEmpty).toList();
   }

@@ -565,33 +565,40 @@ class _LibraryItemsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final maxWidth = constraints.maxWidth < 1400
-              ? 1400.0
-              : constraints.maxWidth;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
 
-          return SizedBox(
-            width: maxWidth,
-            child: GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              itemCount: docs.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 6, 
-                crossAxisSpacing: 18,
-                mainAxisSpacing: 42,
-                childAspectRatio: 0.44,
-              ),
-              itemBuilder: (context, index) {
-                return _LibraryItemCard(data: docs[index].data());
-              },
-            ),
-          );
-        },
-      ),
+        final count = width >= 1200
+            ? 6
+            : width >= 1000
+                ? 5
+                : width >= 800
+                    ? 4
+                    : width >= 600
+                        ? 3
+                        : 2;
+
+        final itemWidth = (width - ((count - 1) * 16)) / count;
+
+        final itemHeight = itemWidth / 0.66 + 110;
+
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          itemCount: docs.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: count,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 32,
+            childAspectRatio: itemWidth / itemHeight,
+          ),
+          itemBuilder: (context, index) {
+            return _LibraryItemCard(data: docs[index].data());
+          },
+        );
+      },
     );
   }
 }
@@ -665,9 +672,9 @@ class _LibraryItemCard extends StatelessWidget {
                     : _posterFallback(),
               ),
             ),
-            const SizedBox(height: 11),
+            const SizedBox(height: 10),
             SizedBox(
-              height: 42,
+              height: 38,
               child: Text(
                 item.title,
                 maxLines: 2,
@@ -676,25 +683,23 @@ class _LibraryItemCard extends StatelessWidget {
                   color: Colors.white,
                   fontSize: 14,
                   fontWeight: FontWeight.w800,
-                  height: 1.25,
+                  height: 1.2,
                   letterSpacing: -0.2,
                 ),
               ),
             ),
-            const SizedBox(height: 7),
+            const SizedBox(height: 4),
             Row(
               children: [
                 const Icon(
                   Icons.star_rounded,
                   color: Color(0xFFFF8B3D),
-                  size: 16,
+                  size: 15,
                 ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    rating <= 0
-                        ? 'No rating'
-                        : '${rating.toStringAsFixed(1)} / 5',
+                    rating <= 0 ? 'No rating' : '${rating.toStringAsFixed(1)} / 5',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
@@ -730,8 +735,7 @@ class _LibraryItemCard extends StatelessWidget {
                       : Colors.white.withOpacity(0.55),
                   fontSize: 11.5,
                   height: 1.35,
-                  fontStyle:
-                      review.isEmpty ? FontStyle.italic : FontStyle.normal,
+                  fontStyle: review.isEmpty ? FontStyle.italic : FontStyle.normal,
                 ),
               ),
             ),

@@ -7,6 +7,7 @@ class OnboardingMediaItem {
   final String imageUrl;
   final String source;
   final String description;
+  final double apiRating;
 
   const OnboardingMediaItem({
     required this.id,
@@ -17,5 +18,6 @@ class OnboardingMediaItem {
     required this.imageUrl,
     required this.source,
     this.description = '',
+    this.apiRating = 0,
   });
 }

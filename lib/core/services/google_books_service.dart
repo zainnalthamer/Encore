@@ -51,6 +51,7 @@ class GoogleBooksService {
             .toString()
             .replaceFirst('http://', 'https://'),
         source: 'google_books',
+        apiRating: ((volumeInfo['averageRating'] ?? 0) as num).toDouble(),
       );
     }).where((item) => item.title.isNotEmpty).toList();
   }
