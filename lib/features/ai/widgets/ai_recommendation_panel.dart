@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/ai_recommendation_service.dart';
 import '../models/recommendation_item.dart';
+import '../../../core/models/onboarding_media_item.dart';
+import '../../../features/items/screens/item_details_screen.dart';
+import '../../../core/services/media_lookup_service.dart';
 
 class AiRecommendationPanel extends StatefulWidget {
   const AiRecommendationPanel({super.key});
@@ -15,6 +18,7 @@ class AiRecommendationPanel extends StatefulWidget {
 class _AiRecommendationPanelState extends State<AiRecommendationPanel> {
   final TextEditingController _promptController = TextEditingController();
   final AiRecommendationService _service = AiRecommendationService();
+  final MediaLookupService _mediaLookupService = MediaLookupService();
 
   String _selectedCategory = 'movie';
   bool _isLoading = false;
@@ -138,6 +142,94 @@ class _AiRecommendationPanelState extends State<AiRecommendationPanel> {
       default:
         return const [];
     }
+  }
+
+  String _domainFromRecommendation(RecommendationItem item) {
+    final type = item.type.toLowerCase().trim();
+
+    if (type.contains('movie')) return 'movies';
+    if (type.contains('show') || type.contains('tv')) return 'shows';
+    if (type.contains('book')) return 'books';
+    if (type.contains('game')) return 'games';
+
+    switch (_selectedCategory) {
+      case 'movie':
+        return 'movies';
+      case 'show':
+        return 'shows';
+      case 'book':
+        return 'books';
+      case 'game':
+        return 'games';
+      default:
+        return 'movies';
+    }
+  }
+
+  OnboardingMediaItem _recommendationToMediaItem(RecommendationItem item) {
+    final domain = _domainFromRecommendation(item);
+
+    return OnboardingMediaItem(
+      id: 'ai_${domain}_${item.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_')}',
+      title: item.title,
+      domain: domain,
+      genres: const [],
+      tags: const ['AI recommendation'],
+      imageUrl: '',
+      source: 'ai',
+      description: item.reason,
+      apiRating: item.matchScore > 0 ? item.matchScore / 20 : 0,
+    );
+  }
+
+  Future<void> _openRecommendation(RecommendationItem item) async {
+    final mediaItem = await _resolveRecommendationToMediaItem(item);
+
+    if (!mounted) return;
+
+    Navigator.of(context).pop();
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ItemDetailsScreen(item: mediaItem),
+      ),
+    );
+  }
+
+  Future<OnboardingMediaItem> _resolveRecommendationToMediaItem(
+    RecommendationItem item,
+  ) async {
+    final domain = _domainFromRecommendation(item);
+
+    try {
+      if (domain == 'movies') {
+        return await _mediaLookupService.searchMovieByTitle(item.title);
+      }
+
+      if (domain == 'shows') {
+        return await _mediaLookupService.searchShowByTitle(item.title);
+      }
+
+      if (domain == 'books') {
+        return await _mediaLookupService.searchBookByTitle(item.title);
+      }
+
+      if (domain == 'games') {
+        return await _mediaLookupService.searchGameByTitle(item.title);
+      }
+    } catch (_) {}
+
+    return OnboardingMediaItem(
+      id: 'ai_${domain}_${item.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_')}',
+      title: item.title,
+      domain: domain,
+      genres: const [],
+      tags: const ['AI recommendation'],
+      imageUrl: '',
+      source: 'ai',
+      description: item.reason,
+      apiRating: item.matchScore > 0 ? item.matchScore / 20 : 0,
+    );
   }
 
   @override
@@ -571,12 +663,17 @@ class _AiRecommendationPanelState extends State<AiRecommendationPanel> {
                                     item.type.toLowerCase(),
                                   );
 
-                                  return Container(
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.045),
-                                      borderRadius: BorderRadius.circular(22),
-                                    ),
+                                  return GestureDetector(
+                                    onTap: () => _openRecommendation(item),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.045),
+                                        borderRadius: BorderRadius.circular(22),
+                                        border: Border.all(
+                                          color: Colors.white.withOpacity(0.06),
+                                        ),
+                                      ),
                                     child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
@@ -669,6 +766,7 @@ class _AiRecommendationPanelState extends State<AiRecommendationPanel> {
                                           ),
                                         ),
                                       ],
+                                    ),
                                     ),
                                   );
                                 },
