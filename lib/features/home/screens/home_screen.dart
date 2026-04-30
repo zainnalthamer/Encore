@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/models/onboarding_media_item.dart';
 import '../../../core/services/media_seed_service.dart';
 import '../../ai/widgets/ai_recommendation_panel.dart';
+import '../../discover/screens/discover_results_screen.dart';
 import '../../items/screens/item_details_screen.dart';
 import '../../profile/screens/profile_screen.dart';
 
@@ -89,9 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final scrolled =
         _scrollController.hasClients && _scrollController.offset > 24;
     if (scrolled != _navScrolled) {
-      setState(() {
-        _navScrolled = scrolled;
-      });
+      setState(() => _navScrolled = scrolled);
     }
   }
 
@@ -99,6 +98,17 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ItemDetailsScreen(item: item),
+      ),
+    );
+  }
+
+  void _openSeeAll(String title, List<OnboardingMediaItem> items) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DiscoverResultsScreen(
+          title: title,
+          items: items,
+        ),
       ),
     );
   }
@@ -151,9 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     } finally {
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-      });
+      setState(() => _loading = false);
     }
   }
 
@@ -465,9 +473,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const SizedBox(height: 24),
-                          const _SectionTitle(
+                          _SectionTitle(
                             title: 'Discover',
                             actionLabel: 'See all',
+                            onTap: () =>
+                                _openSeeAll('Discover', _discoverItems),
                           ),
                           const SizedBox(height: 14),
                           _PosterRow(
@@ -481,6 +491,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           _SectionTitle(
                             title: becauseTitle,
                             actionLabel: 'See all',
+                            onTap: () => _openSeeAll(
+                              becauseTitle,
+                              _becauseYouLikedItems,
+                            ),
                           ),
                           const SizedBox(height: 14),
                           _PosterRow(
@@ -491,9 +505,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             onOpenItem: _openItemDetails,
                           ),
                           const SizedBox(height: 30),
-                          const _SectionTitle(
+                          _SectionTitle(
                             title: 'New from friends',
                             actionLabel: 'See all',
+                            onTap: () => _openSeeAll(
+                              'New from friends',
+                              _friendPlaceholders,
+                            ),
                           ),
                           const SizedBox(height: 14),
                           _FriendsPlaceholderRow(
@@ -944,14 +962,25 @@ class _HeroArrowButtonState extends State<_HeroArrowButton> {
 class _SectionTitle extends StatelessWidget {
   final String title;
   final String actionLabel;
+  final VoidCallback? onTap;
 
   const _SectionTitle({
     required this.title,
     required this.actionLabel,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final action = Text(
+      actionLabel,
+      style: GoogleFonts.inter(
+        color: const Color(0xFFFF8B3D),
+        fontSize: 14.5,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+
     return Row(
       children: [
         Expanded(
@@ -965,14 +994,19 @@ class _SectionTitle extends StatelessWidget {
             ),
           ),
         ),
-        Text(
-          actionLabel,
-          style: GoogleFonts.inter(
-            color: const Color(0xFFFF8B3D),
-            fontSize: 14.5,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+        onTap == null
+            ? action
+            : GestureDetector(
+                onTap: onTap,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 6,
+                  ),
+                  child: action,
+                ),
+              ),
       ],
     );
   }
