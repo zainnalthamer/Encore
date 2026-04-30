@@ -8,7 +8,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/models/onboarding_media_item.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/social_service.dart';
-import '../../../core/services/user_library_service.dart';
 import '../../items/screens/item_details_screen.dart';
 import '../../settings/screens/settings_screen.dart';
 import 'edit_profile_screen.dart';
@@ -27,7 +26,6 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final AuthService _authService = AuthService();
-  final UserLibraryService _libraryService = UserLibraryService();
   final SocialService _socialService = SocialService();
 
   String _selectedSection = 'Favorites';
@@ -110,10 +108,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }) {
     switch (_selectedSection) {
       case 'Favorites':
-        return _FavoritesSection(
-          profileUid: profileUid,
-          isOwnProfile: isOwnProfile,
-        );
+        return _FavoritesSection(profileUid: profileUid);
 
       case 'Shelves':
         return const _SectionSurface(
@@ -125,20 +120,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
 
       case 'Activity':
-        return _ActivitySection(
-          profileUid: profileUid,
-          isOwnProfile: isOwnProfile,
-        );
+        return _ActivitySection(profileUid: profileUid);
 
       case 'Saved':
-        return _SavedSection(
-          profileUid: profileUid,
-          isOwnProfile: isOwnProfile,
-        );
+        return _SavedSection(profileUid: profileUid);
 
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  List<String> _safeStringList(dynamic value) {
+    if (value is List) {
+      return value.map((e) => e.toString()).where((e) => e.trim().isNotEmpty).toList();
+    }
+
+    return <String>[];
   }
 
   @override
@@ -171,12 +168,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             .doc(profileUid)
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            );
-          }
-
           if (snapshot.hasError) {
             return Center(
               child: Text(
@@ -187,6 +178,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+            );
+          }
+
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Colors.white),
             );
           }
 
@@ -210,23 +207,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   .toString();
           final username = (userData['username'] ?? '').toString().trim();
           final bio = (userData['bio'] ?? '').toString().trim();
-          final photoUrl = (userData['photoUrl'] ??
-                  userData['avatarUrl'] ??
-                  '')
+          final photoUrl = (userData['photoUrl'] ?? userData['avatarUrl'] ?? '')
               .toString()
               .trim();
           final headerImageUrl =
               (userData['headerImageUrl'] ?? '').toString().trim();
 
-          final followersList = ((userData['followers'] as List?) ?? [])
-              .map((e) => e.toString())
-              .toList();
-          final followingList = ((userData['following'] as List?) ?? [])
-              .map((e) => e.toString())
-              .toList();
-
-          final followers = followersList.length;
-          final following = followingList.length;
+          final followersList = _safeStringList(userData['followers']);
+          final followingList = _safeStringList(userData['following']);
 
           return Stack(
             children: [
@@ -408,11 +396,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   runSpacing: 12,
                                   children: [
                                     _CountTextBlock(
-                                      value: followers.toString(),
+                                      value: followersList.length.toString(),
                                       label: 'Followers',
                                     ),
                                     _CountTextBlock(
-                                      value: following.toString(),
+                                      value: followingList.length.toString(),
                                       label: 'Following',
                                     ),
                                   ],
@@ -551,12 +539,14 @@ class _FollowButtonState extends State<_FollowButton> {
           : () async {
               setState(() => _loading = true);
 
-              await widget.socialService.toggleFollow(
-                targetUid: widget.targetUid,
-                isFollowing: isFollowing,
-              );
-
-              if (mounted) setState(() => _loading = false);
+              try {
+                await widget.socialService.toggleFollow(
+                  targetUid: widget.targetUid,
+                  isFollowing: isFollowing,
+                );
+              } finally {
+                if (mounted) setState(() => _loading = false);
+              }
             },
       borderRadius: BorderRadius.circular(999),
       child: AnimatedContainer(
@@ -589,6 +579,7 @@ class _FollowButtonState extends State<_FollowButton> {
     );
   }
 }
+
 class _ProfileTopNav extends StatelessWidget {
   final VoidCallback onMenuTap;
   final bool isOwnProfile;
@@ -765,11 +756,9 @@ class _CountTextBlock extends StatelessWidget {
 
 class _FavoritesSection extends StatelessWidget {
   final String profileUid;
-  final bool isOwnProfile;
 
   const _FavoritesSection({
     required this.profileUid,
-    required this.isOwnProfile,
   });
 
   @override
@@ -783,12 +772,22 @@ class _FavoritesSection extends StatelessWidget {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: ref.snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(
-              child: CircularProgressIndicator(color: Colors.white));
+        if (snapshot.hasError) {
+          return const _SectionSurface(
+            child: _LargeInfoBlock(
+              title: 'Could not load favorites',
+              body: 'Check Firestore rules or item data.',
+            ),
+          );
         }
 
-        final docs = snapshot.data!.docs;
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
 
         if (docs.isEmpty) {
           return const _SectionSurface(
@@ -807,11 +806,9 @@ class _FavoritesSection extends StatelessWidget {
 
 class _SavedSection extends StatelessWidget {
   final String profileUid;
-  final bool isOwnProfile;
 
   const _SavedSection({
     required this.profileUid,
-    required this.isOwnProfile,
   });
 
   @override
@@ -825,12 +822,22 @@ class _SavedSection extends StatelessWidget {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: ref.snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(
-              child: CircularProgressIndicator(color: Colors.white));
+        if (snapshot.hasError) {
+          return const _SectionSurface(
+            child: _LargeInfoBlock(
+              title: 'Could not load saved items',
+              body: 'Check Firestore rules or item data.',
+            ),
+          );
         }
 
-        final docs = snapshot.data!.docs;
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
 
         if (docs.isEmpty) {
           return const _SectionSurface(
@@ -849,11 +856,9 @@ class _SavedSection extends StatelessWidget {
 
 class _ActivitySection extends StatelessWidget {
   final String profileUid;
-  final bool isOwnProfile;
 
   const _ActivitySection({
     required this.profileUid,
-    required this.isOwnProfile,
   });
 
   @override
@@ -867,12 +872,22 @@ class _ActivitySection extends StatelessWidget {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: ref.snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(
-              child: CircularProgressIndicator(color: Colors.white));
+        if (snapshot.hasError) {
+          return const _SectionSurface(
+            child: _LargeInfoBlock(
+              title: 'Could not load activity',
+              body: 'Check Firestore rules or activity data.',
+            ),
+          );
         }
 
-        final docs = snapshot.data!.docs;
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
 
         if (docs.isEmpty) {
           return const _SectionSurface(
@@ -885,28 +900,20 @@ class _ActivitySection extends StatelessWidget {
 
         return Column(
           children: docs.map((doc) {
-            final data = doc.data();
-
-            return ListTile(
-              title: Text(
-                data['title'] ?? '',
-                style: const TextStyle(color: Colors.white),
-              ),
-              subtitle: Text(
-                data['type'] ?? '',
-                style: TextStyle(color: Colors.white.withOpacity(0.5)),
-              ),
-            );
+            return _ActivityCard(data: doc.data());
           }).toList(),
         );
       },
     );
   }
 }
+
 class _LibraryItemsGrid extends StatelessWidget {
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
 
-  const _LibraryItemsGrid({required this.docs});
+  const _LibraryItemsGrid({
+    required this.docs,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -930,7 +937,6 @@ class _LibraryItemsGrid extends StatelessWidget {
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          padding: EdgeInsets.zero,
           itemCount: docs.length,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: count,
@@ -950,15 +956,21 @@ class _LibraryItemsGrid extends StatelessWidget {
 class _LibraryItemCard extends StatelessWidget {
   final Map<String, dynamic> data;
 
-  const _LibraryItemCard({required this.data});
+  const _LibraryItemCard({
+    required this.data,
+  });
 
   OnboardingMediaItem _toItem() {
     return OnboardingMediaItem(
       id: (data['itemId'] ?? '').toString(),
       title: (data['title'] ?? 'Untitled').toString(),
       domain: (data['domain'] ?? '').toString(),
-      genres: ((data['genres'] as List?) ?? []).map((e) => e.toString()).toList(),
-      tags: ((data['tags'] as List?) ?? []).map((e) => e.toString()).toList(),
+      genres: ((data['genres'] as List?) ?? [])
+          .map((e) => e.toString())
+          .toList(),
+      tags: ((data['tags'] as List?) ?? [])
+          .map((e) => e.toString())
+          .toList(),
       imageUrl: (data['imageUrl'] ?? '').toString(),
       source: (data['source'] ?? 'library').toString(),
       description: (data['description'] ?? '').toString(),
@@ -982,85 +994,210 @@ class _LibraryItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final item = _toItem();
-    final rating = ((data['userRating'] ?? 0) as num).toDouble();
-    final review = (data['review'] ?? data['lastReview'] ?? '').toString().trim();
-    final status = (data['status'] ?? _defaultStatus(item.domain)).toString();
+
+    final ratingRaw = data['userRating'];
+    final rating = ratingRaw is num ? ratingRaw.toDouble() : 0.0;
+
+    final review = (data['review'] ?? data['lastReview'] ?? '')
+        .toString()
+        .trim();
+
+    final status =
+        (data['status'] ?? _defaultStatus(item.domain)).toString();
 
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => ItemDetailsScreen(item: item)),
+          MaterialPageRoute(
+            builder: (_) => ItemDetailsScreen(item: item),
+          ),
         );
       },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            flex: 72,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(17),
-              child: item.imageUrl.trim().isNotEmpty
-                  ? Image.network(
-                      item.imageUrl,
-                      width: double.infinity,
-                      height: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _posterFallback(),
-                    )
-                  : _posterFallback(),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 72,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(17),
+                child: item.imageUrl.trim().isNotEmpty
+                    ? Image.network(
+                        item.imageUrl,
+                        width: double.infinity,
+                        height: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _posterFallback(),
+                      )
+                    : _posterFallback(),
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 38,
-            child: Text(
-              item.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 38,
+              child: Text(
+                item.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(
+                  Icons.star_rounded,
+                  color: Color(0xFFFF8B3D),
+                  size: 15,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    rating <= 0
+                        ? 'No rating'
+                        : '${rating.toStringAsFixed(1)} / 5',
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.75),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              status,
               style: GoogleFonts.inter(
-                color: Colors.white,
-                fontSize: 14,
+                color: const Color(0xFFFF8B3D),
+                fontSize: 12,
                 fontWeight: FontWeight.w800,
-                height: 1.2,
               ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            rating <= 0 ? 'No rating' : '${rating.toStringAsFixed(1)} / 5',
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.75),
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            status,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              color: const Color(0xFFFF8B3D),
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 6),
-          SizedBox(
-            height: 44,
-            child: Text(
-              review.isEmpty ? 'No review yet.' : review,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                color: review.isEmpty
-                    ? Colors.white.withOpacity(0.35)
-                    : Colors.white.withOpacity(0.55),
-                fontSize: 11.5,
-                height: 1.35,
-                fontStyle: review.isEmpty ? FontStyle.italic : FontStyle.normal,
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 44,
+              child: Text(
+                review.isEmpty ? 'No review yet.' : review,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: review.isEmpty
+                      ? Colors.white.withOpacity(0.35)
+                      : Colors.white.withOpacity(0.55),
+                  fontSize: 11.5,
+                  height: 1.35,
+                ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _posterFallback() {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.white.withOpacity(0.06),
+      child: const Center(
+        child: Icon(Icons.image_outlined, color: Colors.white54),
+      ),
+    );
+  }
+}
+
+class _ActivityCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+
+  const _ActivityCard({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final title = (data['title'] ?? 'Untitled').toString();
+    final imageUrl = (data['imageUrl'] ?? '').toString();
+    final type =
+        (data['activityType'] ?? data['type'] ?? 'updated').toString();
+
+    final ratingRaw = data['userRating'] ?? data['rating'];
+    final rating = ratingRaw is num ? ratingRaw.toDouble() : 0.0;
+
+    final review = (data['review'] ?? data['text'] ?? '').toString();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: imageUrl.isNotEmpty
+                ? Image.network(
+                    imageUrl,
+                    width: 52,
+                    height: 72,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        _activityImageFallback(),
+                  )
+                : _activityImageFallback(),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  type.toUpperCase(),
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFFFF8B3D),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (rating > 0)
+                  Text(
+                    'Rated ${rating.toStringAsFixed(1)} / 5',
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.6),
+                      fontSize: 12,
+                    ),
+                  ),
+                if (review.isNotEmpty)
+                  Text(
+                    review,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.5),
+                      fontSize: 12,
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
@@ -1068,12 +1205,12 @@ class _LibraryItemCard extends StatelessWidget {
     );
   }
 
-  Widget _posterFallback() {
+  Widget _activityImageFallback() {
     return Container(
+      width: 52,
+      height: 72,
       color: Colors.white.withOpacity(0.06),
-      child: const Center(
-        child: Icon(Icons.image_outlined, color: Colors.white54),
-      ),
+      child: const Icon(Icons.image, color: Colors.white38),
     );
   }
 }
@@ -1115,36 +1252,26 @@ class _LargeInfoBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.035),
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Column(
-        children: [
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              color: Colors.white,
-              fontSize: 19,
-              fontWeight: FontWeight.w800,
-            ),
+    return Column(
+      children: [
+        Text(
+          title,
+          style: GoogleFonts.inter(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
           ),
-          const SizedBox(height: 9),
-          Text(
-            body,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.62),
-              fontSize: 14,
-              height: 1.6,
-            ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          body,
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            color: Colors.white.withOpacity(0.6),
+            fontSize: 13,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
