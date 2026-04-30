@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/models/onboarding_media_item.dart';
 import '../../../core/services/discover_api_service.dart';
+import '../../../core/services/social_service.dart';
 import '../../items/screens/item_details_screen.dart';
 import '../../profile/screens/profile_screen.dart';
 import 'discover_results_screen.dart';
@@ -21,6 +23,7 @@ class DiscoverScreen extends StatefulWidget {
 
 class _DiscoverScreenState extends State<DiscoverScreen> {
   final DiscoverApiService _service = DiscoverApiService();
+  final SocialService _socialService = SocialService();
   final TextEditingController _searchController = TextEditingController();
 
   late Future<DiscoverData> _future;
@@ -32,6 +35,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   String _selectedDomain = 'all';
 
   List<OnboardingMediaItem> _searchResults = [];
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _userResults = [];
 
   final List<String> _types = const ['items', 'users', 'shelves'];
   final List<String> _domains = const [
@@ -65,23 +69,43 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     _debounce = Timer(const Duration(milliseconds: 450), () async {
       if (clean.isEmpty) {
         if (!mounted) return;
-        setState(() {
-          _searching = false;
-          _searchResults = [];
-        });
-        return;
-      }
 
-      if (_selectedType != 'items') {
-        if (!mounted) return;
         setState(() {
           _searching = false;
           _searchResults = [];
+          _userResults = [];
         });
+
         return;
       }
 
       setState(() => _searching = true);
+
+      if (_selectedType == 'users') {
+        final users = await _socialService.searchUsers(clean);
+
+        if (!mounted) return;
+
+        setState(() {
+          _userResults = users;
+          _searchResults = [];
+          _searching = false;
+        });
+
+        return;
+      }
+
+      if (_selectedType == 'shelves') {
+        if (!mounted) return;
+
+        setState(() {
+          _searching = false;
+          _searchResults = [];
+          _userResults = [];
+        });
+
+        return;
+      }
 
       final results = await _service.searchAll(clean);
 
@@ -91,14 +115,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         _searchResults = _selectedDomain == 'all'
             ? results
             : results.where((item) => item.domain == _selectedDomain).toList();
+        _userResults = [];
         _searching = false;
       });
     });
-  }
-
-  List<OnboardingMediaItem> _filterByDomain(List<OnboardingMediaItem> items) {
-    if (_selectedDomain == 'all') return items;
-    return items.where((item) => item.domain == _selectedDomain).toList();
   }
 
   void _openResults(String title, List<OnboardingMediaItem> items) {
@@ -160,11 +180,16 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       label: _typeLabel,
                       onSelected: (value) {
                         modalSetState(() => _selectedType = value);
+
                         setState(() {
                           _selectedType = value;
                           _searchResults = [];
+                          _userResults = [];
                         });
-                        if (_query.trim().isNotEmpty) _runSearch(_query);
+
+                        if (_query.trim().isNotEmpty) {
+                          _runSearch(_query);
+                        }
                       },
                     ),
                     const SizedBox(height: 22),
@@ -175,8 +200,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       label: _domainLabelForFilter,
                       onSelected: (value) {
                         modalSetState(() => _selectedDomain = value);
+
                         setState(() => _selectedDomain = value);
-                        if (_query.trim().isNotEmpty) _runSearch(_query);
+
+                        if (_query.trim().isNotEmpty) {
+                          _runSearch(_query);
+                        }
                       },
                     ),
                   ],
@@ -208,7 +237,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       case 'items':
         return 'Items';
       case 'users':
-        return 'Users soon';
+        return 'Users';
       case 'shelves':
         return 'Shelves soon';
       default:
@@ -253,6 +282,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       padding: const EdgeInsets.fromLTRB(22, 106, 22, 0),
                       child: _SearchHeader(
                         controller: _searchController,
+                        selectedType: _selectedType,
                         onChanged: _runSearch,
                         onFilter: _showFilterSheet,
                       ),
@@ -267,6 +297,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                         query: _query,
                         selectedType: _selectedType,
                         items: _searchResults,
+                        users: _userResults,
                       ),
                     )
                   else if (snapshot.connectionState == ConnectionState.waiting)
@@ -309,8 +340,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       child: _PosterSection(
                         title: 'Popular now',
                         items: data.popular,
-                        onSeeAll: () =>
-                            _openResults('Popular now', data.popular),
+                        onSeeAll: () => _openResults(
+                          'Popular now',
+                          data.popular,
+                        ),
                       ),
                     ),
                     const SliverToBoxAdapter(child: SizedBox(height: 30)),
@@ -325,8 +358,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       child: _PosterSection(
                         title: 'Trending shows',
                         items: data.trending,
-                        onSeeAll: () =>
-                            _openResults('Trending shows', data.trending),
+                        onSeeAll: () => _openResults(
+                          'Trending shows',
+                          data.trending,
+                        ),
                       ),
                     ),
                     const SliverToBoxAdapter(child: SizedBox(height: 30)),
@@ -334,8 +369,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       child: _PosterSection(
                         title: 'Highest rated',
                         items: data.highestRated,
-                        onSeeAll: () =>
-                            _openResults('Highest rated', data.highestRated),
+                        onSeeAll: () => _openResults(
+                          'Highest rated',
+                          data.highestRated,
+                        ),
                       ),
                     ),
                     const SliverToBoxAdapter(child: SizedBox(height: 30)),
@@ -373,7 +410,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     );
   }
 }
-
 class _DiscoverTopNav extends StatelessWidget {
   const _DiscoverTopNav();
 
@@ -456,17 +492,25 @@ class _NavText extends StatelessWidget {
 
 class _SearchHeader extends StatelessWidget {
   final TextEditingController controller;
+  final String selectedType;
   final ValueChanged<String> onChanged;
   final VoidCallback onFilter;
 
   const _SearchHeader({
     required this.controller,
+    required this.selectedType,
     required this.onChanged,
     required this.onFilter,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hint = selectedType == 'users'
+        ? 'Search users by username...'
+        : selectedType == 'shelves'
+            ? 'Search shelves...'
+            : 'Search movies, shows, books, games...';
+
     return Row(
       children: [
         Expanded(
@@ -491,7 +535,7 @@ class _SearchHeader extends StatelessWidget {
                   Icons.search_rounded,
                   color: Colors.white.withOpacity(0.42),
                 ),
-                hintText: 'Search movies, shows, books, games...',
+                hintText: hint,
                 hintStyle: GoogleFonts.inter(
                   color: Colors.white.withOpacity(0.32),
                   fontSize: 14,
@@ -526,6 +570,218 @@ class _SearchHeader extends StatelessWidget {
   }
 }
 
+class _SearchResultsSliver extends StatelessWidget {
+  final bool searching;
+  final String query;
+  final String selectedType;
+  final List<OnboardingMediaItem> items;
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> users;
+
+  const _SearchResultsSliver({
+    required this.searching,
+    required this.query,
+    required this.selectedType,
+    required this.items,
+    required this.users,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (selectedType == 'users') {
+      if (searching) {
+        return const SliverFillRemaining(
+          child: Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          ),
+        );
+      }
+
+      if (users.isEmpty) {
+        return SliverFillRemaining(
+          child: Center(
+            child: Text(
+              'No users found for "$query"',
+              style: GoogleFonts.inter(
+                color: Colors.white.withOpacity(0.68),
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        );
+      }
+
+      return SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => _UserSearchCard(doc: users[index]),
+          childCount: users.length,
+        ),
+      );
+    }
+
+    if (selectedType == 'shelves') {
+      return SliverFillRemaining(
+        child: Center(
+          child: Text(
+            'Shelf discovery is coming soon.',
+            style: GoogleFonts.inter(
+              color: Colors.white.withOpacity(0.68),
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (searching) {
+      return const SliverFillRemaining(
+        child: Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+    }
+
+    if (items.isEmpty) {
+      return SliverFillRemaining(
+        child: Center(
+          child: Text(
+            'No results for "$query"',
+            style: GoogleFonts.inter(
+              color: Colors.white.withOpacity(0.68),
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SliverGrid(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => _PosterCard(item: items[index]),
+        childCount: items.length,
+      ),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 180,
+        mainAxisExtent: 286,
+        mainAxisSpacing: 24,
+        crossAxisSpacing: 18,
+      ),
+    );
+  }
+}
+
+class _UserSearchCard extends StatelessWidget {
+  final QueryDocumentSnapshot<Map<String, dynamic>> doc;
+
+  const _UserSearchCard({
+    required this.doc,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final data = doc.data();
+
+    final name = (data['displayName'] ?? data['name'] ?? 'User').toString();
+    final username = (data['username'] ?? '').toString();
+    final photoUrl =
+        (data['photoUrl'] ?? data['avatarUrl'] ?? '').toString().trim();
+    final bio = (data['bio'] ?? '').toString();
+    final followers = ((data['followers'] as List?) ?? []).length;
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ProfileScreen(userId: doc.id),
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.045),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white.withOpacity(0.07)),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 30,
+              backgroundColor: Colors.white.withOpacity(0.08),
+              backgroundImage:
+                  photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+              child: photoUrl.isEmpty
+                  ? Text(
+                      name.trim().isNotEmpty ? name[0].toUpperCase() : 'U',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (username.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      '@$username',
+                      style: GoogleFonts.inter(
+                        color: Colors.white.withOpacity(0.55),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                  if (bio.trim().isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      bio,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        color: Colors.white.withOpacity(0.42),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              '$followers followers',
+              style: GoogleFonts.inter(
+                color: kDiscoverAccent,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _FreshPickGrid extends StatelessWidget {
   final OnboardingMediaItem featured;
   final List<OnboardingMediaItem> sideItems;
@@ -543,10 +799,7 @@ class _FreshPickGrid extends StatelessWidget {
       height: 322,
       child: Row(
         children: [
-          Expanded(
-            flex: 3,
-            child: _FeaturedCard(item: featured),
-          ),
+          Expanded(flex: 3, child: _FeaturedCard(item: featured)),
           const SizedBox(width: 16),
           Expanded(
             flex: 2,
@@ -572,9 +825,7 @@ class _FreshPickGrid extends StatelessWidget {
 class _FeaturedCard extends StatelessWidget {
   final OnboardingMediaItem item;
 
-  const _FeaturedCard({
-    required this.item,
-  });
+  const _FeaturedCard({required this.item});
 
   @override
   Widget build(BuildContext context) {
@@ -595,7 +846,6 @@ class _FeaturedCard extends StatelessWidget {
               imageUrl,
               fit: BoxFit.cover,
               alignment: Alignment.center,
-              filterQuality: FilterQuality.high,
               errorBuilder: (_, __, ___) => _fallback(item.domain),
             ),
             DecoratedBox(
@@ -615,38 +865,34 @@ class _FeaturedCard extends StatelessWidget {
               left: 26,
               right: 26,
               bottom: 24,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 540),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const _Pill(label: 'Fresh pick'),
-                    const SizedBox(height: 12),
-                    Text(
-                      item.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        color: Colors.white,
-                        fontSize: 38,
-                        fontWeight: FontWeight.w900,
-                        height: 0.95,
-                        letterSpacing: -1.4,
-                      ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _Pill(label: 'Fresh pick'),
+                  const SizedBox(height: 12),
+                  Text(
+                    item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 38,
+                      fontWeight: FontWeight.w900,
+                      height: 0.95,
                     ),
-                    const SizedBox(height: 11),
-                    Text(
-                      _subtitleForItem(item),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        color: Colors.white.withOpacity(0.66),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
+                  ),
+                  const SizedBox(height: 11),
+                  Text(
+                    _subtitleForItem(item),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.66),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -659,9 +905,7 @@ class _FeaturedCard extends StatelessWidget {
 class _SidePosterCard extends StatelessWidget {
   final OnboardingMediaItem item;
 
-  const _SidePosterCard({
-    required this.item,
-  });
+  const _SidePosterCard({required this.item});
 
   @override
   Widget build(BuildContext context) {
@@ -682,7 +926,6 @@ class _SidePosterCard extends StatelessWidget {
               imageUrl,
               fit: BoxFit.cover,
               alignment: Alignment.topCenter,
-              filterQuality: FilterQuality.high,
               errorBuilder: (_, __, ___) => _fallback(item.domain),
             ),
             DecoratedBox(
@@ -691,8 +934,8 @@ class _SidePosterCard extends StatelessWidget {
                   begin: Alignment.center,
                   end: Alignment.bottomCenter,
                   colors: [
-                  Colors.transparent,
-                  Colors.black.withOpacity(0.45),
+                    Colors.transparent,
+                    Colors.black.withOpacity(0.45),
                   ],
                 ),
               ),
@@ -750,7 +993,6 @@ class _PosterSection extends StatelessWidget {
                     color: Colors.white,
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: -0.7,
                   ),
                 ),
                 const Spacer(),
@@ -792,9 +1034,7 @@ class _PosterSection extends StatelessWidget {
 class _PosterCard extends StatelessWidget {
   final OnboardingMediaItem item;
 
-  const _PosterCard({
-    required this.item,
-  });
+  const _PosterCard({required this.item});
 
   @override
   Widget build(BuildContext context) {
@@ -802,53 +1042,48 @@ class _PosterCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () => _openItem(context, item),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              height: 228,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(22),
-                child: imageUrl.isEmpty
-                    ? _fallback(item.domain)
-                    : Image.network(
-                        imageUrl,
-                        width: double.infinity,
-                        height: double.infinity,
-                        fit: BoxFit.cover,
-                        alignment: Alignment.topCenter,
-                        filterQuality: FilterQuality.high,
-                        errorBuilder: (_, __, ___) => _fallback(item.domain),
-                      ),
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 228,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(22),
+              child: imageUrl.isEmpty
+                  ? _fallback(item.domain)
+                  : Image.network(
+                      imageUrl,
+                      width: double.infinity,
+                      height: double.infinity,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.topCenter,
+                      errorBuilder: (_, __, ___) => _fallback(item.domain),
+                    ),
             ),
-            const SizedBox(height: 10),
-            Text(
-              item.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontSize: 14.5,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.2,
-              ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            item.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontSize: 14.5,
+              fontWeight: FontWeight.w900,
             ),
-            const SizedBox(height: 4),
-            Text(
-              _subtitleForItem(item),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                color: Colors.white.withOpacity(0.42),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _subtitleForItem(item),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              color: Colors.white.withOpacity(0.42),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -886,7 +1121,6 @@ class _VibeSection extends StatelessWidget {
               color: Colors.white,
               fontSize: 24,
               fontWeight: FontWeight.w900,
-              letterSpacing: -0.7,
             ),
           ),
           const SizedBox(height: 14),
@@ -914,11 +1148,7 @@ class _VibeSection extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        vibe.icon,
-                        color: kDiscoverAccent,
-                        size: 24,
-                      ),
+                      Icon(vibe.icon, color: kDiscoverAccent, size: 24),
                       const Spacer(),
                       Text(
                         vibe.title,
@@ -942,71 +1172,34 @@ class _VibeSection extends StatelessWidget {
   }
 }
 
-class _SearchResultsSliver extends StatelessWidget {
-  final bool searching;
-  final String query;
-  final String selectedType;
+class _VibeData {
+  final String title;
+  final IconData icon;
   final List<OnboardingMediaItem> items;
 
-  const _SearchResultsSliver({
-    required this.searching,
-    required this.query,
-    required this.selectedType,
-    required this.items,
-  });
+  const _VibeData(this.title, this.icon, this.items);
+}
+
+class _Pill extends StatelessWidget {
+  final String label;
+
+  const _Pill({required this.label});
 
   @override
   Widget build(BuildContext context) {
-    if (selectedType == 'users' || selectedType == 'shelves') {
-      return SliverFillRemaining(
-        child: Center(
-          child: Text(
-            selectedType == 'users'
-                ? 'User discovery is coming soon.'
-                : 'Shelf discovery is coming soon.',
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.68),
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (searching) {
-      return const SliverFillRemaining(
-        child: Center(
-          child: CircularProgressIndicator(color: Colors.white),
-        ),
-      );
-    }
-
-    if (items.isEmpty) {
-      return SliverFillRemaining(
-        child: Center(
-          child: Text(
-            'No results for "$query"',
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.68),
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return SliverGrid(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) => _PosterCard(item: items[index]),
-        childCount: items.length,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: kDiscoverAccent,
+        borderRadius: BorderRadius.circular(999),
       ),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 180,
-        mainAxisExtent: 286,
-        mainAxisSpacing: 24,
-        crossAxisSpacing: 18,
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          color: Colors.black,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }
@@ -1030,7 +1223,7 @@ class _FutureDiscoveryBlock extends StatelessWidget {
         Expanded(
           child: _FutureCard(
             title: 'Public profiles',
-            subtitle: 'Similar users later',
+            subtitle: 'Find and follow users',
             icon: Icons.people_alt_outlined,
           ),
         ),
@@ -1141,8 +1334,9 @@ class _FilterGroup extends StatelessWidget {
                   vertical: 10,
                 ),
                 decoration: BoxDecoration(
-                  color:
-                      active ? kDiscoverAccent : Colors.white.withOpacity(0.07),
+                  color: active
+                      ? kDiscoverAccent
+                      : Colors.white.withOpacity(0.07),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
                     color: active
@@ -1165,41 +1359,6 @@ class _FilterGroup extends StatelessWidget {
       ],
     );
   }
-}
-
-class _Pill extends StatelessWidget {
-  final String label;
-
-  const _Pill({
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: kDiscoverAccent,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.inter(
-          color: Colors.black,
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
-class _VibeData {
-  final String title;
-  final IconData icon;
-  final List<OnboardingMediaItem> items;
-
-  const _VibeData(this.title, this.icon, this.items);
 }
 
 String _image(String url) {
@@ -1282,16 +1441,4 @@ void _openItem(BuildContext context, OnboardingMediaItem item) {
       builder: (_) => ItemDetailsScreen(item: item),
     ),
   );
-}
-
-List<String> _safeList(dynamic value) {
-  if (value is List<String>) return value;
-  if (value is List) {
-    return value
-        .where((item) => item != null)
-        .map((item) => item.toString())
-        .where((item) => item.trim().isNotEmpty)
-        .toList();
-  }
-  return [];
 }

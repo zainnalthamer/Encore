@@ -17,8 +17,13 @@ class AuthService {
     required String photoUrl,
     String bio = '',
   }) async {
+    final cleanEmail = email.trim().toLowerCase();
+    final cleanName = name.trim();
+    final cleanUsername = username.trim();
+    final cleanPhotoUrl = photoUrl.trim();
+
     final credential = await _auth.createUserWithEmailAndPassword(
-      email: email,
+      email: cleanEmail,
       password: password,
     );
 
@@ -27,14 +32,22 @@ class AuthService {
       throw Exception('User creation failed');
     }
 
+    await user.updateDisplayName(cleanName);
+
+    if (cleanPhotoUrl.isNotEmpty) {
+      await user.updatePhotoURL(cleanPhotoUrl);
+    }
+
     await _firestore.collection('users').doc(user.uid).set({
       'uid': user.uid,
-      'email': email,
-      'name': name,
-      'username': username,
-      'displayName': name,
+      'email': cleanEmail,
+      'name': cleanName,
+      'username': cleanUsername,
+      'usernameLower': cleanUsername.toLowerCase(),
+      'displayName': cleanName,
       'bio': bio.trim(),
-      'photoUrl': photoUrl,
+      'photoUrl': cleanPhotoUrl,
+      'avatarUrl': cleanPhotoUrl,
       'headerImageUrl': '',
       'followers': <String>[],
       'following': <String>[],
@@ -63,7 +76,7 @@ class AuthService {
     required String password,
   }) async {
     return await _auth.signInWithEmailAndPassword(
-      email: email,
+      email: email.trim().toLowerCase(),
       password: password,
     );
   }
@@ -112,15 +125,22 @@ class AuthService {
     final userDoc = _firestore.collection('users').doc(user.uid);
     final snapshot = await userDoc.get();
 
+    final displayName = (user.displayName ?? username ?? 'User').trim();
+    final generatedUsername = _generateUsername(
+      username ?? user.displayName ?? user.email ?? 'user',
+    );
+
     if (!snapshot.exists) {
       await userDoc.set({
         'uid': user.uid,
-        'email': user.email ?? '',
-        'name': user.displayName ?? username ?? '',
-        'username': username ?? user.displayName ?? '',
-        'displayName': user.displayName ?? username ?? '',
+        'email': (user.email ?? '').trim().toLowerCase(),
+        'name': displayName,
+        'username': generatedUsername,
+        'usernameLower': generatedUsername.toLowerCase(),
+        'displayName': displayName,
         'bio': '',
         'photoUrl': user.photoURL ?? '',
+        'avatarUrl': user.photoURL ?? '',
         'headerImageUrl': '',
         'followers': <String>[],
         'following': <String>[],
@@ -143,14 +163,23 @@ class AuthService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
     } else {
+      final data = snapshot.data() ?? {};
+
+      final existingUsername = (data['username'] ?? generatedUsername)
+          .toString()
+          .trim();
+
       await userDoc.update({
-        'email': user.email ?? '',
-        'name': user.displayName ?? snapshot.data()?['name'] ?? '',
-        'displayName': user.displayName ?? snapshot.data()?['displayName'] ?? '',
-        'photoUrl': user.photoURL ?? snapshot.data()?['photoUrl'] ?? '',
-        'headerImageUrl': snapshot.data()?['headerImageUrl'] ?? '',
-        'followers': snapshot.data()?['followers'] ?? <String>[],
-        'following': snapshot.data()?['following'] ?? <String>[],
+        'email': (user.email ?? data['email'] ?? '').toString().trim().toLowerCase(),
+        'name': user.displayName ?? data['name'] ?? displayName,
+        'displayName': user.displayName ?? data['displayName'] ?? displayName,
+        'username': existingUsername,
+        'usernameLower': existingUsername.toLowerCase(),
+        'photoUrl': user.photoURL ?? data['photoUrl'] ?? '',
+        'avatarUrl': user.photoURL ?? data['avatarUrl'] ?? data['photoUrl'] ?? '',
+        'headerImageUrl': data['headerImageUrl'] ?? '',
+        'followers': data['followers'] ?? <String>[],
+        'following': data['following'] ?? <String>[],
         'updatedAt': FieldValue.serverTimestamp(),
       });
     }
@@ -164,28 +193,49 @@ class AuthService {
     required String headerImageUrl,
   }) async {
     final currentUser = _auth.currentUser;
+    final cleanName = name.trim();
+    final cleanPhotoUrl = photoUrl.trim();
 
     await _firestore.collection('users').doc(uid).update({
-      'name': name.trim(),
-      'displayName': name.trim(),
+      'name': cleanName,
+      'displayName': cleanName,
       'bio': bio.trim(),
-      'photoUrl': photoUrl.trim(),
+      'photoUrl': cleanPhotoUrl,
+      'avatarUrl': cleanPhotoUrl,
       'headerImageUrl': headerImageUrl.trim(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    if (currentUser != null) {
-      await currentUser.updateDisplayName(name.trim());
-      if (photoUrl.trim().isNotEmpty) {
-        await currentUser.updatePhotoURL(photoUrl.trim());
+    if (currentUser != null && currentUser.uid == uid) {
+      await currentUser.updateDisplayName(cleanName);
+
+      if (cleanPhotoUrl.isNotEmpty) {
+        await currentUser.updatePhotoURL(cleanPhotoUrl);
       }
     }
+  }
+
+  String _generateUsername(String value) {
+    final base = value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'@.*$'), '')
+        .replaceAll(RegExp(r'[^a-z0-9_]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+
+    if (base.isEmpty) {
+      return 'user_${DateTime.now().millisecondsSinceEpoch}';
+    }
+
+    return base;
   }
 
   Future<void> logout() async {
     if (!kIsWeb) {
       await GoogleSignIn.instance.signOut();
     }
+
     await _auth.signOut();
   }
 }
