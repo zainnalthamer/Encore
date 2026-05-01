@@ -37,7 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
   static const double _heroHeight = 560;
   static const double _navHeight = 92;
   static const double _cardWidth = 220;
-  static const double _rowHeight = 360;
+  static const double _rowHeight = 368;
 
   @override
   void initState() {
@@ -197,141 +197,222 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<List<_FriendActivity>> _loadFriendActivitiesThisWeek() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return [];
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return [];
 
-    final following = await _loadFollowingIds(user.uid);
-    if (following.isEmpty) return [];
+  final following = await _loadFollowingIds(user.uid);
+  if (following.isEmpty) return [];
 
-    final startOfWeek = DateTime.now().subtract(const Duration(days: 7));
-    final activities = <_FriendActivity>[];
+  final startOfWeek = DateTime.now().subtract(const Duration(days: 7));
+  final activities = <_FriendActivity>[];
 
-    for (final followedUid in following) {
-      final friendDoc = await FirebaseFirestore.instance
+  for (final followedUid in following) {
+    final friendDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(followedUid)
+        .get();
+
+    if (!friendDoc.exists) continue;
+
+    final friendData = friendDoc.data() ?? {};
+
+    final displayName =
+        (friendData['displayName'] ?? friendData['name'] ?? 'User')
+            .toString();
+
+    final username = (friendData['username'] ?? '').toString();
+
+    final photoUrl =
+        (friendData['photoUrl'] ?? friendData['avatarUrl'] ?? '').toString();
+
+    final activitySnapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(followedUid)
+        .collection('activity')
+        .get();
+
+    for (final doc in activitySnapshot.docs) {
+      final data = doc.data();
+
+      final createdAt = _readDate(data['createdAt']);
+      if (createdAt == null) continue;
+      if (createdAt.isBefore(startOfWeek)) continue;
+
+      final rawType =
+          (data['activityType'] ?? data['type'] ?? '').toString().trim();
+
+      final reviewText =
+          (data['review'] ?? data['text'] ?? data['lastReview'] ?? '')
+              .toString()
+              .trim();
+
+      final itemId =
+          (data['itemId'] ?? data['safeItemId'] ?? data['id'] ?? '')
+              .toString()
+              .trim();
+
+      final title =
+          (data['title'] ?? data['itemTitle'] ?? 'Untitled').toString().trim();
+
+      final domain =
+          (data['domain'] ?? data['itemDomain'] ?? '').toString().trim();
+
+      final imageUrl =
+          (data['imageUrl'] ?? data['posterUrl'] ?? data['coverUrl'] ?? '')
+              .toString()
+              .trim();
+
+      final source =
+          (data['source'] ?? data['itemSource'] ?? 'activity').toString();
+
+      if (itemId.isEmpty && title.isEmpty) continue;
+
+      double rating = _readRating(data);
+
+      if (rating <= 0 && itemId.isNotEmpty) {
+        QuerySnapshot libraryQuery = await FirebaseFirestore.instance
           .collection('users')
           .doc(followedUid)
+          .collection('libraryItems')
+          .where('itemId', isEqualTo: itemId)
+          .limit(1)
           .get();
 
-      if (!friendDoc.exists) continue;
+          if (libraryQuery.docs.isNotEmpty) {
+            final libData = libraryQuery.docs.first.data() as Map<String, dynamic>;
+            rating = _readRating(libData);
+          }
+      }
 
-      final friendData = friendDoc.data() ?? {};
+      final isReview = rawType == 'reviewed' ||
+          rawType == 'review' ||
+          reviewText.isNotEmpty;
 
-      final displayName =
-          (friendData['displayName'] ?? friendData['name'] ?? 'User')
-              .toString();
+      final isRating =
+          rawType == 'rated' || rawType == 'rating' || rating > 0;
 
-      final username = (friendData['username'] ?? '').toString();
+      final isFavorite = rawType == 'favorited' ||
+          rawType == 'favorite' ||
+          rawType == 'liked' ||
+          rawType == 'like';
 
-      final photoUrl =
-          (friendData['photoUrl'] ?? friendData['avatarUrl'] ?? '').toString();
+      final isSaved = rawType == 'saved' || rawType == 'save';
 
-      final activitySnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(followedUid)
-          .collection('activity')
-          .get();
+      final isRemoved = rawType == 'unsaved' ||
+          rawType == 'unfavorited' ||
+          rawType == 'removed' ||
+          rawType == 'removed_saved' ||
+          rawType == 'removed_favorite';
 
-      for (final doc in activitySnapshot.docs) {
-        final data = doc.data();
+      if (isRemoved) continue;
+      if (!isReview && !isRating && !isFavorite && !isSaved) continue;
 
-        final createdAt = data['createdAt'] is Timestamp
-            ? (data['createdAt'] as Timestamp).toDate()
-            : null;
+      activities.add(
+        _FriendActivity(
+          userId: followedUid,
+          displayName: displayName,
+          username: username,
+          userPhotoUrl: photoUrl,
+          itemId: itemId,
+          title: title.isEmpty ? 'Untitled' : title,
+          domain: domain,
+          imageUrl: imageUrl,
+          source: source,
+          type: isReview
+              ? 'reviewed'
+              : isRating
+                  ? 'rated'
+                  : isFavorite
+                      ? 'favorited'
+                      : 'saved',
+          rating: rating,
+          review: reviewText,
+          createdAt: createdAt,
+        ),
+      );
+    }
+  }
 
-        if (createdAt == null) continue;
-        if (createdAt.isBefore(startOfWeek)) continue;
+  activities.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-        final rawType =
-            (data['activityType'] ?? data['type'] ?? '').toString().trim();
+  final latestByItem = <String, _FriendActivity>{};
 
-        final reviewText =
-            (data['review'] ?? data['text'] ?? '').toString().trim();
+  for (final activity in activities) {
+    final key = _activityItemKey(activity);
+    if (key.isEmpty) continue;
 
-        final rating = data['userRating'] is num
-            ? (data['userRating'] as num).toDouble()
-            : data['rating'] is num
-                ? (data['rating'] as num).toDouble()
-                : 0.0;
+    final existing = latestByItem[key];
 
-        final isReview = rawType == 'reviewed' ||
-            rawType == 'review' ||
-            reviewText.isNotEmpty;
+    if (existing == null || activity.createdAt.isAfter(existing.createdAt)) {
+      latestByItem[key] = activity;
+    }
+  }
 
-        final isRating =
-            rawType == 'rated' || rawType == 'rating' || rating > 0;
+  final deduped = latestByItem.values.toList();
+  deduped.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-        final isFavorite = rawType == 'favorited' ||
-            rawType == 'favorite' ||
-            rawType == 'liked' ||
-            rawType == 'like';
+  return deduped;
+}
 
-        final isSaved = rawType == 'saved' || rawType == 'save';
+  DateTime? _readDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
 
-        final isRemoved = rawType == 'unsaved' ||
-            rawType == 'unfavorited' ||
-            rawType == 'removed' ||
-            rawType == 'removed_saved' ||
-            rawType == 'removed_favorite';
+  double _readRating(Map<String, dynamic> data) {
+    final candidates = [
+      data['userRating'],
+      data['rating'],
+      data['rated'],
+      data['score'],
+      data['stars'],
+      data['value'],
+      data['userScore'],
+      data['itemRating'],
+    ];
 
-        if (isRemoved) continue;
-        if (!isReview && !isRating && !isFavorite && !isSaved) continue;
+    for (final value in candidates) {
+      final parsed = _parseRating(value);
+      if (parsed > 0) return parsed;
+    }
 
-        final itemId =
-            (data['itemId'] ?? data['safeItemId'] ?? data['id'] ?? '')
-                .toString();
+    final metadata = data['metadata'];
+    if (metadata is Map) {
+      final nestedCandidates = [
+        metadata['userRating'],
+        metadata['rating'],
+        metadata['score'],
+        metadata['stars'],
+      ];
 
-        final title = (data['title'] ?? 'Untitled').toString();
-        final domain = (data['domain'] ?? '').toString();
-        final imageUrl = (data['imageUrl'] ?? '').toString();
-        final source = (data['source'] ?? 'activity').toString();
-
-        if (itemId.trim().isEmpty && title.trim().isEmpty) continue;
-
-        activities.add(
-          _FriendActivity(
-            userId: followedUid,
-            displayName: displayName,
-            username: username,
-            userPhotoUrl: photoUrl,
-            itemId: itemId,
-            title: title,
-            domain: domain,
-            imageUrl: imageUrl,
-            source: source,
-            type: isReview
-                ? 'reviewed'
-                : isRating
-                    ? 'rated'
-                    : isFavorite
-                        ? 'favorited'
-                        : 'saved',
-            rating: rating,
-            review: reviewText,
-            createdAt: createdAt,
-          ),
-        );
+      for (final value in nestedCandidates) {
+        final parsed = _parseRating(value);
+        if (parsed > 0) return parsed;
       }
     }
 
-    activities.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return 0.0;
+  }
 
-    final latestByItem = <String, _FriendActivity>{};
+  double _parseRating(dynamic value) {
+    if (value == null) return 0.0;
 
-    for (final activity in activities) {
-      final key = _activityItemKey(activity);
-      if (key.isEmpty) continue;
-
-      final existing = latestByItem[key];
-
-      if (existing == null || activity.createdAt.isAfter(existing.createdAt)) {
-        latestByItem[key] = activity;
-      }
+    if (value is num) {
+      return value.toDouble();
     }
 
-    final deduped = latestByItem.values.toList();
-    deduped.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final text = value.toString().trim();
+    if (text.isEmpty) return 0.0;
 
-    return deduped;
+    final direct = double.tryParse(text);
+    if (direct != null) return direct;
+
+    final match = RegExp(r'(\d+(\.\d+)?)').firstMatch(text);
+    if (match == null) return 0.0;
+
+    return double.tryParse(match.group(1) ?? '') ?? 0.0;
   }
 
   String _activityItemKey(_FriendActivity activity) {
@@ -604,8 +685,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _heroController.dispose();
     super.dispose();
   }
-
-  @override
+    @override
   Widget build(BuildContext context) {
     final becauseTitle = _topGenres.isEmpty
         ? 'Because you like these'
@@ -680,7 +760,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(height: 14),
                           _PosterRow(
                             items: _discoverItems,
-                            domainColor: _domainColor,
                             domainIcon: _domainIcon,
                             domainLabel: _domainLabel,
                             onOpenItem: _openItemDetails,
@@ -697,7 +776,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(height: 14),
                           _PosterRow(
                             items: _becauseYouLikedItems,
-                            domainColor: _domainColor,
                             domainIcon: _domainIcon,
                             domainLabel: _domainLabel,
                             onOpenItem: _openItemDetails,
@@ -735,6 +813,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
 class _DerivedPreferences {
   final List<String> favoriteDomains;
   final List<String> topGenres;
@@ -801,7 +880,6 @@ class _FriendActivity {
     );
   }
 }
-
 class _FadedTopNav extends StatelessWidget {
   final bool scrolled;
 
@@ -1244,19 +1322,20 @@ class _SectionTitle extends StatelessWidget {
             ),
           ),
         ),
-        onTap == null
-            ? action
-            : GestureDetector(
-                onTap: onTap,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 6,
-                  ),
-                  child: action,
-                ),
+        if (onTap == null)
+          action
+        else
+          GestureDetector(
+            onTap: onTap,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 4,
+                vertical: 6,
               ),
+              child: action,
+            ),
+          ),
       ],
     );
   }
@@ -1264,14 +1343,12 @@ class _SectionTitle extends StatelessWidget {
 
 class _PosterRow extends StatelessWidget {
   final List<OnboardingMediaItem> items;
-  final Color Function(String) domainColor;
   final IconData Function(String) domainIcon;
   final String Function(String) domainLabel;
   final ValueChanged<OnboardingMediaItem> onOpenItem;
 
   const _PosterRow({
     required this.items,
-    required this.domainColor,
     required this.domainIcon,
     required this.domainLabel,
     required this.onOpenItem,
@@ -1423,7 +1500,7 @@ class _PosterCardState extends State<_PosterCard> {
                     letterSpacing: -0.2,
                   ),
                 ),
-                const SizedBox(height: 7),
+                const SizedBox(height: 5),
                 Text(
                   widget.item.genres.isNotEmpty
                       ? widget.item.genres.take(2).join(' · ')
@@ -1524,30 +1601,40 @@ class _FriendActivityCardState extends State<_FriendActivityCard> {
 
   @override
   Widget build(BuildContext context) {
-    final a = widget.activity;
-    final color = widget.domainColor(a.domain);
+    final activity = widget.activity;
+    final color = widget.domainColor(activity.domain);
 
-    final icon = a.type == 'reviewed'
+    final actionIcon = activity.type == 'reviewed'
         ? Icons.rate_review_rounded
-        : a.type == 'rated'
+        : activity.type == 'rated'
             ? Icons.star_rounded
-            : a.type == 'favorited'
+            : activity.type == 'favorited'
                 ? Icons.favorite_rounded
                 : Icons.bookmark_rounded;
 
-    final rating = a.rating > 0 ? a.rating : 0;
-
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onEnter: (_) {
+        if (mounted) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (mounted) setState(() => _hovered = false);
+      },
       child: GestureDetector(
-        onTap: () => widget.onOpenItem(a.toItem()),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => widget.onOpenItem(activity.toItem()),
         child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0, end: _hovered ? -6 : 0),
+          tween: Tween<double>(
+            begin: 0,
+            end: _hovered ? -6 : 0,
+          ),
           duration: const Duration(milliseconds: 180),
-          builder: (_, offset, child) {
-            return Transform.translate(offset: Offset(0, offset), child: child);
+          curve: Curves.easeOutCubic,
+          builder: (context, offset, child) {
+            return Transform.translate(
+              offset: Offset(0, offset),
+              child: child,
+            );
           },
           child: SizedBox(
             width: _HomeScreenState._cardWidth,
@@ -1560,9 +1647,49 @@ class _FriendActivityCardState extends State<_FriendActivityCard> {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        a.imageUrl.isNotEmpty
-                            ? Image.network(a.imageUrl, fit: BoxFit.cover)
-                            : _fallbackPoster(a.domain),
+                        if (activity.imageUrl.trim().isNotEmpty)
+                          Image.network(
+                            activity.imageUrl,
+                            fit: BoxFit.cover,
+                            filterQuality: FilterQuality.medium,
+                            errorBuilder: (_, __, ___) {
+                              return _fallbackPoster(activity.domain);
+                            },
+                          )
+                        else
+                          _fallbackPoster(activity.domain),
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withOpacity(0.08),
+                                  Colors.black.withOpacity(0.66),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 10,
+                          left: 10,
+                          child: Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.34),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              widget.domainIcon(activity.domain),
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                        ),
                         Positioned(
                           right: 10,
                           bottom: 10,
@@ -1570,75 +1697,73 @@ class _FriendActivityCardState extends State<_FriendActivityCard> {
                             width: 34,
                             height: 34,
                             decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.45),
+                              color: Colors.black.withOpacity(0.46),
                               borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.08),
+                              ),
                             ),
-                            child: Icon(icon, color: color, size: 18),
+                            child: Icon(
+                              actionIcon,
+                              color: color,
+                              size: 17,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
-
-                const SizedBox(height: 10),
-
+                const SizedBox(height: 9),
                 Text(
-                  a.title,
+                  activity.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
                     color: Colors.white,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
+                    height: 1.1,
+                    letterSpacing: -0.2,
                   ),
                 ),
-
                 const SizedBox(height: 8),
-
-                if (rating > 0)
-                  Row(
-                    children: List.generate(5, (i) {
-                      return Icon(
-                        i < rating.round()
-                            ? Icons.star_rounded
-                            : Icons.star_border_rounded,
-                        size: 14,
-                        color: const Color(0xFFFFC46B),
-                      );
-                    }),
-                  ),
-
+                _StarRating(rating: activity.rating),
                 const SizedBox(height: 8),
-
                 Row(
                   children: [
                     CircleAvatar(
                       radius: 11,
-                      backgroundImage: a.userPhotoUrl.isNotEmpty
-                          ? NetworkImage(a.userPhotoUrl)
-                          : null,
                       backgroundColor: Colors.white.withOpacity(0.08),
-                      child: a.userPhotoUrl.isEmpty
+                      backgroundImage: activity.userPhotoUrl.trim().isNotEmpty
+                          ? NetworkImage(activity.userPhotoUrl.trim())
+                          : null,
+                      child: activity.userPhotoUrl.trim().isEmpty
                           ? Text(
-                              a.displayName.isNotEmpty
-                                  ? a.displayName[0].toUpperCase()
+                              activity.displayName.isNotEmpty
+                                  ? activity.displayName[0].toUpperCase()
                                   : 'U',
-                              style: const TextStyle(fontSize: 9),
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                              ),
                             )
                           : null,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 7),
                     Expanded(
                       child: Text(
-                        a.username.isNotEmpty
-                            ? '@${a.username}'
-                            : a.displayName,
+                        activity.username.trim().isNotEmpty
+                            ? '@${activity.username.trim()}'
+                            : activity.displayName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(
-                          color: Colors.white.withOpacity(0.7),
-                          fontSize: 12,
+                          color: Colors.white.withOpacity(0.70),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          height: 1.1,
                         ),
                       ),
                     ),
@@ -1656,12 +1781,75 @@ class _FriendActivityCardState extends State<_FriendActivityCard> {
     return Container(
       color: Colors.white.withOpacity(0.05),
       child: Center(
-        child: Icon(widget.domainIcon(domain), color: Colors.white54),
+        child: Icon(
+          widget.domainIcon(domain),
+          color: Colors.white54,
+          size: 28,
+        ),
       ),
     );
   }
 }
 
+class _StarRating extends StatelessWidget {
+  final double rating;
+
+  const _StarRating({
+    required this.rating,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = rating <= 0 ? 0.0 : rating.clamp(0.0, 5.0);
+
+    if (normalized <= 0) {
+      return Text(
+        'No rating',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.inter(
+          color: Colors.white.withOpacity(0.50),
+          fontSize: 12.3,
+          fontWeight: FontWeight.w500,
+          height: 1.1,
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        ...List.generate(5, (index) {
+          final starNumber = index + 1;
+
+          IconData icon;
+          if (normalized >= starNumber) {
+            icon = Icons.star_rounded;
+          } else if (normalized >= starNumber - 0.5) {
+            icon = Icons.star_half_rounded;
+          } else {
+            icon = Icons.star_border_rounded;
+          }
+
+          return Icon(
+            icon,
+            color: const Color(0xFFFFC46B),
+            size: 14,
+          );
+        }),
+        const SizedBox(width: 5),
+        Text(
+          normalized.toStringAsFixed(1),
+          style: GoogleFonts.inter(
+            color: Colors.white.withOpacity(0.58),
+            fontSize: 12.2,
+            fontWeight: FontWeight.w600,
+            height: 1.1,
+          ),
+        ),
+      ],
+    );
+  }
+}
 class _HeroLoadingBackdrop extends StatelessWidget {
   const _HeroLoadingBackdrop();
 

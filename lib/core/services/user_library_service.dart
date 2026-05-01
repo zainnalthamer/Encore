@@ -158,88 +158,96 @@ Future<void> toggleFavorite({
   }
 
   Future<void> updateRating({
-    required OnboardingMediaItem item,
-    required double rating,
-  }) async {
-    final batch = _db.batch();
+  required OnboardingMediaItem item,
+  required double rating,
+}) async {
+  final batch = _db.batch();
 
-    batch.set(
-      _libraryItemRef(item.id),
-      {
-        ..._baseItemData(item),
-        'userRating': rating,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
-
-    batch.set(_activityRef().doc(), {
-      ..._activityData(item),
-      'type': 'rated',
-      'activityType': 'rated',
+  batch.set(
+    _libraryItemRef(item.id),
+    {
+      ..._baseItemData(item),
       'userRating': rating,
       'rating': rating,
+      'updatedAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
-    });
+    },
+    SetOptions(merge: true),
+  );
 
-    await batch.commit();
-  }
+  batch.set(_activityRef().doc(), {
+    ..._activityData(item),
+    'type': 'rated',
+    'activityType': 'rated',
+    'userRating': rating,
+    'rating': rating,
+    'createdAt': FieldValue.serverTimestamp(),
+  });
+
+  await batch.commit();
+}
 
   Future<void> addReview({
-    required OnboardingMediaItem item,
-    required double rating,
-    required String review,
-    required String displayName,
-    required String username,
-    required String photoUrl,
-  }) async {
-    final user = _auth.currentUser;
-    if (user == null) {
-      throw Exception('User not logged in');
-    }
+  required OnboardingMediaItem item,
+  required double rating,
+  required String review,
+  required String displayName,
+  required String username,
+  required String photoUrl,
+}) async {
+  final user = _auth.currentUser;
+  if (user == null) {
+    throw Exception('User not logged in');
+  }
 
-    final batch = _db.batch();
-    final reviewRef = _itemRef(item.id).collection('reviews').doc();
+  final batch = _db.batch();
+  final reviewRef = _itemRef(item.id).collection('reviews').doc();
 
-    batch.set(
-      _libraryItemRef(item.id),
-      {
-        ..._baseItemData(item),
-        'userRating': rating,
-        'lastReview': review,
-        'review': review,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
-
-    batch.set(reviewRef, {
-      'uid': user.uid,
-      'itemId': item.id,
-      'title': item.title,
-      'domain': item.domain,
-      'imageUrl': item.imageUrl,
-      'rating': rating,
-      'review': review,
-      'displayName': displayName,
-      'username': username,
-      'photoUrl': photoUrl,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    batch.set(_activityRef().doc(), {
-      ..._activityData(item),
-      'type': 'reviewed',
-      'activityType': 'reviewed',
+  batch.set(
+    _libraryItemRef(item.id),
+    {
+      ..._baseItemData(item),
       'userRating': rating,
       'rating': rating,
+      'lastReview': review,
       'review': review,
-      'text': review,
+      'updatedAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
-    });
+    },
+    SetOptions(merge: true),
+  );
 
-    await batch.commit();
-  }
+  batch.set(reviewRef, {
+    'uid': user.uid,
+    'itemId': item.id,
+    'safeItemId': _safeDocId(item.id),
+    'title': item.title,
+    'domain': item.domain,
+    'imageUrl': item.imageUrl,
+    'source': item.source,
+    'rating': rating,
+    'userRating': rating,
+    'review': review,
+    'text': review,
+    'displayName': displayName,
+    'username': username,
+    'photoUrl': photoUrl,
+    'createdAt': FieldValue.serverTimestamp(),
+  });
+
+  batch.set(_activityRef().doc(), {
+    ..._activityData(item),
+    'type': 'reviewed',
+    'activityType': 'reviewed',
+    'userRating': rating,
+    'rating': rating,
+    'review': review,
+    'text': review,
+    'createdAt': FieldValue.serverTimestamp(),
+  });
+
+  await batch.commit();
+}
 
   Future<void> deleteReview({
     required String itemId,
