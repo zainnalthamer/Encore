@@ -32,52 +32,12 @@ class _HomeScreenState extends State<HomeScreen> {
   List<OnboardingMediaItem> _popularItems = [];
   List<OnboardingMediaItem> _discoverItems = [];
   List<OnboardingMediaItem> _becauseYouLikedItems = [];
+  List<_FriendActivity> _friendActivities = [];
 
   static const double _heroHeight = 560;
   static const double _navHeight = 92;
-
-  final List<OnboardingMediaItem> _friendPlaceholders = const [
-    OnboardingMediaItem(
-      id: 'friend_placeholder_1',
-      title: 'Friends activity coming soon',
-      domain: 'shows',
-      genres: ['Social'],
-      tags: ['Placeholder'],
-      imageUrl: '',
-      source: 'local',
-      description: 'This section will show what your friends recently added.',
-    ),
-    OnboardingMediaItem(
-      id: 'friend_placeholder_2',
-      title: 'Shared shelves will appear here',
-      domain: 'books',
-      genres: ['Community'],
-      tags: ['Placeholder'],
-      imageUrl: '',
-      source: 'local',
-      description: 'Shared shelves and notes will appear here later.',
-    ),
-    OnboardingMediaItem(
-      id: 'friend_placeholder_3',
-      title: 'Recent entries from friends',
-      domain: 'movies',
-      genres: ['Placeholder'],
-      tags: ['Placeholder'],
-      imageUrl: '',
-      source: 'local',
-      description: 'You will be able to see recent friend activity here.',
-    ),
-    OnboardingMediaItem(
-      id: 'friend_placeholder_4',
-      title: 'Reactions and likes later',
-      domain: 'games',
-      genres: ['Placeholder'],
-      tags: ['Placeholder'],
-      imageUrl: '',
-      source: 'local',
-      description: 'Likes, reactions, and activity updates will go here.',
-    ),
-  ];
+  static const double _cardWidth = 220;
+  static const double _rowHeight = 360;
 
   @override
   void initState() {
@@ -89,28 +49,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void _handleScroll() {
     final scrolled =
         _scrollController.hasClients && _scrollController.offset > 24;
-    if (scrolled != _navScrolled) {
+
+    if (scrolled != _navScrolled && mounted) {
       setState(() => _navScrolled = scrolled);
     }
-  }
-
-  void _openItemDetails(OnboardingMediaItem item) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ItemDetailsScreen(item: item),
-      ),
-    );
-  }
-
-  void _openSeeAll(String title, List<OnboardingMediaItem> items) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => DiscoverResultsScreen(
-          title: title,
-          items: items,
-        ),
-      ),
-    );
   }
 
   Future<void> _loadHomeFeed() async {
@@ -141,10 +83,13 @@ class _HomeScreenState extends State<HomeScreen> {
       );
 
       final discover = _buildDiscoverItems(scored);
+
       final becauseYouLiked = _buildBecauseYouLikedItems(
         scored,
         topGenres: topGenres,
       );
+
+      final friendActivities = await _loadFriendActivitiesThisWeek();
 
       if (!mounted) return;
 
@@ -153,9 +98,11 @@ class _HomeScreenState extends State<HomeScreen> {
         _popularItems = popular;
         _discoverItems = discover;
         _becauseYouLikedItems = becauseYouLiked;
+        _friendActivities = friendActivities;
       });
     } catch (e) {
       if (!mounted) return;
+
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
       });
@@ -180,7 +127,10 @@ class _HomeScreenState extends State<HomeScreen> {
         await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
 
     final data = doc.data() ?? {};
-    final derived = (data['derivedPreferences'] as Map<String, dynamic>?) ?? {};
+
+    final derived = data['derivedPreferences'] is Map<String, dynamic>
+        ? data['derivedPreferences'] as Map<String, dynamic>
+        : <String, dynamic>{};
 
     return _DerivedPreferences(
       favoriteDomains: (derived['favoriteDomains'] as List?)
@@ -196,13 +146,220 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  List<OnboardingMediaItem> _buildPopularItems(List<OnboardingMediaItem> items) {
+  Future<List<String>> _loadFollowingIds(String currentUid) async {
+    final ids = <String>{};
+
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUid)
+        .get();
+
+    final userData = userDoc.data() ?? {};
+    final followingRaw = userData['following'];
+
+    if (followingRaw is List) {
+      for (final value in followingRaw) {
+        if (value is String) {
+          final clean = value.trim();
+          if (clean.isNotEmpty && clean != currentUid) {
+            ids.add(clean);
+          }
+        }
+
+        if (value is Map) {
+          final uid = (value['uid'] ?? value['userId'] ?? value['id'] ?? '')
+              .toString()
+              .trim();
+
+          if (uid.isNotEmpty && uid != currentUid) {
+            ids.add(uid);
+          }
+        }
+      }
+    }
+
+    try {
+      final followingSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUid)
+          .collection('following')
+          .get();
+
+      for (final doc in followingSnapshot.docs) {
+        final id = doc.id.trim();
+        if (id.isNotEmpty && id != currentUid) {
+          ids.add(id);
+        }
+      }
+    } catch (_) {}
+
+    return ids.toList();
+  }
+
+  Future<List<_FriendActivity>> _loadFriendActivitiesThisWeek() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return [];
+
+    final following = await _loadFollowingIds(user.uid);
+    if (following.isEmpty) return [];
+
+    final startOfWeek = DateTime.now().subtract(const Duration(days: 7));
+    final activities = <_FriendActivity>[];
+
+    for (final followedUid in following) {
+      final friendDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(followedUid)
+          .get();
+
+      if (!friendDoc.exists) continue;
+
+      final friendData = friendDoc.data() ?? {};
+
+      final displayName =
+          (friendData['displayName'] ?? friendData['name'] ?? 'User')
+              .toString();
+
+      final username = (friendData['username'] ?? '').toString();
+
+      final photoUrl =
+          (friendData['photoUrl'] ?? friendData['avatarUrl'] ?? '').toString();
+
+      final activitySnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(followedUid)
+          .collection('activity')
+          .get();
+
+      for (final doc in activitySnapshot.docs) {
+        final data = doc.data();
+
+        final createdAt = data['createdAt'] is Timestamp
+            ? (data['createdAt'] as Timestamp).toDate()
+            : null;
+
+        if (createdAt == null) continue;
+        if (createdAt.isBefore(startOfWeek)) continue;
+
+        final rawType =
+            (data['activityType'] ?? data['type'] ?? '').toString().trim();
+
+        final reviewText =
+            (data['review'] ?? data['text'] ?? '').toString().trim();
+
+        final rating = data['userRating'] is num
+            ? (data['userRating'] as num).toDouble()
+            : data['rating'] is num
+                ? (data['rating'] as num).toDouble()
+                : 0.0;
+
+        final isReview = rawType == 'reviewed' ||
+            rawType == 'review' ||
+            reviewText.isNotEmpty;
+
+        final isRating =
+            rawType == 'rated' || rawType == 'rating' || rating > 0;
+
+        final isFavorite = rawType == 'favorited' ||
+            rawType == 'favorite' ||
+            rawType == 'liked' ||
+            rawType == 'like';
+
+        final isSaved = rawType == 'saved' || rawType == 'save';
+
+        final isRemoved = rawType == 'unsaved' ||
+            rawType == 'unfavorited' ||
+            rawType == 'removed' ||
+            rawType == 'removed_saved' ||
+            rawType == 'removed_favorite';
+
+        if (isRemoved) continue;
+        if (!isReview && !isRating && !isFavorite && !isSaved) continue;
+
+        final itemId =
+            (data['itemId'] ?? data['safeItemId'] ?? data['id'] ?? '')
+                .toString();
+
+        final title = (data['title'] ?? 'Untitled').toString();
+        final domain = (data['domain'] ?? '').toString();
+        final imageUrl = (data['imageUrl'] ?? '').toString();
+        final source = (data['source'] ?? 'activity').toString();
+
+        if (itemId.trim().isEmpty && title.trim().isEmpty) continue;
+
+        activities.add(
+          _FriendActivity(
+            userId: followedUid,
+            displayName: displayName,
+            username: username,
+            userPhotoUrl: photoUrl,
+            itemId: itemId,
+            title: title,
+            domain: domain,
+            imageUrl: imageUrl,
+            source: source,
+            type: isReview
+                ? 'reviewed'
+                : isRating
+                    ? 'rated'
+                    : isFavorite
+                        ? 'favorited'
+                        : 'saved',
+            rating: rating,
+            review: reviewText,
+            createdAt: createdAt,
+          ),
+        );
+      }
+    }
+
+    activities.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    final latestByItem = <String, _FriendActivity>{};
+
+    for (final activity in activities) {
+      final key = _activityItemKey(activity);
+      if (key.isEmpty) continue;
+
+      final existing = latestByItem[key];
+
+      if (existing == null || activity.createdAt.isAfter(existing.createdAt)) {
+        latestByItem[key] = activity;
+      }
+    }
+
+    final deduped = latestByItem.values.toList();
+    deduped.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    return deduped;
+  }
+
+  String _activityItemKey(_FriendActivity activity) {
+    final rawId = activity.itemId.trim().toLowerCase();
+
+    if (rawId.isNotEmpty) {
+      return rawId
+          .replaceAll('tmdb_movie_', '')
+          .replaceAll('tmdb_show_', '')
+          .replaceAll('rawg_game_', '')
+          .replaceAll('google_book_', '')
+          .replaceAll(RegExp(r'[^a-z0-9]'), '');
+    }
+
+    return activity.title
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+    List<OnboardingMediaItem> _buildPopularItems(List<OnboardingMediaItem> items) {
     final scored = items.map((item) {
       var score = 0;
+
       if (item.imageUrl.trim().isNotEmpty) score += 20;
       if (item.description.trim().isNotEmpty) score += 12;
       if (item.genres.isNotEmpty) score += 6;
       if (item.domain == 'movies' || item.domain == 'shows') score += 8;
+
       return _ScoredItem(item: item, score: score);
     }).toList();
 
@@ -291,6 +448,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final targetGenre = topGenres.first.toLowerCase();
+
     final filtered = scored
         .where(
           (entry) => entry.item.genres.any(
@@ -301,7 +459,20 @@ class _HomeScreenState extends State<HomeScreen> {
         .toList();
 
     if (filtered.length >= 8) return filtered.take(10).toList();
+
     return scored.map((e) => e.item).take(10).toList();
+  }
+
+  String _genreLine(OnboardingMediaItem item) {
+    if (item.genres.isNotEmpty) {
+      return item.genres.take(3).join(' • ');
+    }
+
+    if (item.tags.isNotEmpty) {
+      return item.tags.take(3).join(' • ');
+    }
+
+    return _domainLabel(item.domain);
   }
 
   String _domainLabel(String domain) {
@@ -349,6 +520,25 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _openItemDetails(OnboardingMediaItem item) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ItemDetailsScreen(item: item),
+      ),
+    );
+  }
+
+  void _openSeeAll(String title, List<OnboardingMediaItem> items) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DiscoverResultsScreen(
+          title: title,
+          items: items,
+        ),
+      ),
+    );
+  }
+
   void _openAiPanel() {
     showGeneralDialog(
       context: context,
@@ -367,6 +557,7 @@ class _HomeScreenState extends State<HomeScreen> {
           parent: animation,
           curve: Curves.easeOutCubic,
         );
+
         return FadeTransition(
           opacity: curved,
           child: SlideTransition(
@@ -383,7 +574,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _nextHero() {
     if (_popularItems.isEmpty) return;
+
     final next = (_heroIndex + 1) % _popularItems.length;
+
     _heroController.animateToPage(
       next,
       duration: const Duration(milliseconds: 320),
@@ -393,8 +586,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _previousHero() {
     if (_popularItems.isEmpty) return;
+
     final previous =
         (_heroIndex - 1 + _popularItems.length) % _popularItems.length;
+
     _heroController.animateToPage(
       previous,
       duration: const Duration(milliseconds: 320),
@@ -444,15 +639,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       onPrevious: _previousHero,
                       onNext: _nextHero,
                       onChanged: (index) {
-                        setState(() {
-                          _heroIndex = index;
-                        });
+                        setState(() => _heroIndex = index);
                       },
                       onOpenItem: _openItemDetails,
                       domainColor: _domainColor,
                       domainIcon: _domainIcon,
                       domainLabel: _domainLabel,
-                    ),
+                      genreLine: _genreLine,
+                    )
+                  else
+                    const SizedBox(height: 120),
                   if (_loading)
                     const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 20),
@@ -476,8 +672,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           _SectionTitle(
                             title: 'Discover',
                             actionLabel: 'See all',
-                            onTap: () =>
-                                _openSeeAll('Discover', _discoverItems),
+                            onTap: () => _openSeeAll(
+                              'Discover',
+                              _discoverItems,
+                            ),
                           ),
                           const SizedBox(height: 14),
                           _PosterRow(
@@ -508,16 +706,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           _SectionTitle(
                             title: 'New from friends',
                             actionLabel: 'See all',
-                            onTap: () => _openSeeAll(
-                              'New from friends',
-                              _friendPlaceholders,
-                            ),
+                            onTap: () {},
                           ),
                           const SizedBox(height: 14),
-                          _FriendsPlaceholderRow(
-                            items: _friendPlaceholders,
+                          _FriendActivityRow(
+                            activities: _friendActivities,
                             domainIcon: _domainIcon,
                             domainColor: _domainColor,
+                            onOpenItem: _openItemDetails,
                           ),
                         ],
                       ),
@@ -530,20 +726,15 @@ class _HomeScreenState extends State<HomeScreen> {
             top: 0,
             left: 0,
             right: 0,
-            child: _FadedTopNav(
-              scrolled: _navScrolled,
-            ),
+            child: _FadedTopNav(scrolled: _navScrolled),
           ),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      floatingActionButton: _AiCornerButton(
-        onTap: _openAiPanel,
-      ),
+      floatingActionButton: _AiCornerButton(onTap: _openAiPanel),
     );
   }
 }
-
 class _DerivedPreferences {
   final List<String> favoriteDomains;
   final List<String> topGenres;
@@ -564,6 +755,51 @@ class _ScoredItem {
     required this.item,
     required this.score,
   });
+}
+
+class _FriendActivity {
+  final String userId;
+  final String displayName;
+  final String username;
+  final String userPhotoUrl;
+  final String itemId;
+  final String title;
+  final String domain;
+  final String imageUrl;
+  final String source;
+  final String type;
+  final double rating;
+  final String review;
+  final DateTime createdAt;
+
+  const _FriendActivity({
+    required this.userId,
+    required this.displayName,
+    required this.username,
+    required this.userPhotoUrl,
+    required this.itemId,
+    required this.title,
+    required this.domain,
+    required this.imageUrl,
+    required this.source,
+    required this.type,
+    required this.rating,
+    required this.review,
+    required this.createdAt,
+  });
+
+  OnboardingMediaItem toItem() {
+    return OnboardingMediaItem(
+      id: itemId,
+      title: title,
+      domain: domain,
+      genres: const [],
+      tags: const [],
+      imageUrl: imageUrl,
+      source: source,
+      description: review,
+    );
+  }
 }
 
 class _FadedTopNav extends StatelessWidget {
@@ -655,8 +891,12 @@ class _NavItemState extends State<_NavItem> {
             : Colors.white.withOpacity(0.70);
 
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onEnter: (_) {
+        if (mounted) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (mounted) setState(() => _hovered = false);
+      },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
@@ -685,6 +925,7 @@ class _HeroCarousel extends StatelessWidget {
   final Color Function(String) domainColor;
   final IconData Function(String) domainIcon;
   final String Function(String) domainLabel;
+  final String Function(OnboardingMediaItem) genreLine;
 
   const _HeroCarousel({
     required this.items,
@@ -697,6 +938,7 @@ class _HeroCarousel extends StatelessWidget {
     required this.domainColor,
     required this.domainIcon,
     required this.domainLabel,
+    required this.genreLine,
   });
 
   @override
@@ -718,6 +960,7 @@ class _HeroCarousel extends StatelessWidget {
               onPageChanged: onChanged,
               itemBuilder: (context, index) {
                 final current = items[index];
+
                 return Stack(
                   fit: StackFit.expand,
                   children: [
@@ -726,9 +969,11 @@ class _HeroCarousel extends StatelessWidget {
                         current.imageUrl,
                         fit: BoxFit.cover,
                         filterQuality: FilterQuality.high,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: const Color(0xFF111114),
-                        ),
+                        errorBuilder: (_, __, ___) {
+                          return Container(
+                            color: const Color(0xFF111114),
+                          );
+                        },
                       )
                     else
                       Container(
@@ -840,9 +1085,9 @@ class _HeroCarousel extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      item.genres.isEmpty
-                          ? 'Genres: Curated'
-                          : 'Genres: ${item.genres.take(3).join(', ')}',
+                      genreLine(item),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
                         color: Colors.white.withOpacity(0.78),
                         fontSize: 14.2,
@@ -854,12 +1099,12 @@ class _HeroCarousel extends StatelessWidget {
                       item.description.trim().isEmpty
                           ? 'A standout title from the current popular feed.'
                           : item.description,
-                      maxLines: 3,
+                      maxLines: 4,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
                         color: Colors.white.withOpacity(0.86),
                         fontSize: 14.6,
-                        height: 1.6,
+                        height: 1.55,
                       ),
                     ),
                   ],
@@ -867,7 +1112,7 @@ class _HeroCarousel extends StatelessWidget {
               ),
             ),
           ),
-          Positioned(
+                    Positioned(
             left: 18,
             top: 0,
             bottom: 0,
@@ -897,6 +1142,7 @@ class _HeroCarousel extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(items.length, (index) {
                 final active = index == heroIndex;
+
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
                   margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -936,8 +1182,12 @@ class _HeroArrowButtonState extends State<_HeroArrowButton> {
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onEnter: (_) {
+        if (mounted) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (mounted) setState(() => _hovered = false);
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         width: 46,
@@ -1032,7 +1282,7 @@ class _PosterRow extends StatelessWidget {
     if (items.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
-      height: 336,
+      height: _HomeScreenState._rowHeight,
       child: ListView.separated(
         clipBehavior: Clip.none,
         padding: const EdgeInsets.only(top: 8, bottom: 12),
@@ -1042,7 +1292,6 @@ class _PosterRow extends StatelessWidget {
         itemBuilder: (context, index) {
           return _PosterCard(
             item: items[index],
-            domainColor: domainColor,
             domainIcon: domainIcon,
             domainLabel: domainLabel,
             onOpenItem: onOpenItem,
@@ -1055,14 +1304,12 @@ class _PosterRow extends StatelessWidget {
 
 class _PosterCard extends StatefulWidget {
   final OnboardingMediaItem item;
-  final Color Function(String) domainColor;
   final IconData Function(String) domainIcon;
   final String Function(String) domainLabel;
   final ValueChanged<OnboardingMediaItem> onOpenItem;
 
   const _PosterCard({
     required this.item,
-    required this.domainColor,
     required this.domainIcon,
     required this.domainLabel,
     required this.onOpenItem,
@@ -1079,13 +1326,20 @@ class _PosterCardState extends State<_PosterCard> {
   Widget build(BuildContext context) {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onEnter: (_) {
+        if (mounted) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (mounted) setState(() => _hovered = false);
+      },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => widget.onOpenItem(widget.item),
         child: TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: 0, end: _hovered ? -6 : 0),
+          tween: Tween<double>(
+            begin: 0,
+            end: _hovered ? -6 : 0,
+          ),
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
           builder: (context, offset, child) {
@@ -1095,7 +1349,7 @@ class _PosterCardState extends State<_PosterCard> {
             );
           },
           child: SizedBox(
-            width: 196,
+            width: _HomeScreenState._cardWidth,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1110,9 +1364,11 @@ class _PosterCardState extends State<_PosterCard> {
                             widget.item.imageUrl,
                             fit: BoxFit.cover,
                             filterQuality: FilterQuality.medium,
-                            errorBuilder: (_, __, ___) => Container(
-                              color: Colors.white.withOpacity(0.05),
-                            ),
+                            errorBuilder: (_, __, ___) {
+                              return Container(
+                                color: Colors.white.withOpacity(0.05),
+                              );
+                            },
                           )
                         else
                           Container(
@@ -1154,32 +1410,31 @@ class _PosterCardState extends State<_PosterCard> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 Text(
                   widget.item.title,
-                  maxLines: 3,
-                  softWrap: true,
-                  overflow: TextOverflow.visible,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
                     color: Colors.white,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    height: 1.22,
+                    height: 1.1,
                     letterSpacing: -0.2,
                   ),
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 7),
                 Text(
                   widget.item.genres.isNotEmpty
                       ? widget.item.genres.take(2).join(' · ')
                       : widget.domainLabel(widget.item.domain),
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
-                    color: Colors.white.withOpacity(0.60),
-                    fontSize: 12.8,
+                    color: Colors.white.withOpacity(0.55),
+                    fontSize: 12.7,
                     fontWeight: FontWeight.w500,
-                    height: 1.4,
+                    height: 1.2,
                   ),
                 ),
               ],
@@ -1190,80 +1445,218 @@ class _PosterCardState extends State<_PosterCard> {
     );
   }
 }
-
-class _FriendsPlaceholderRow extends StatelessWidget {
-  final List<OnboardingMediaItem> items;
+class _FriendActivityRow extends StatelessWidget {
+  final List<_FriendActivity> activities;
   final IconData Function(String) domainIcon;
   final Color Function(String) domainColor;
+  final ValueChanged<OnboardingMediaItem> onOpenItem;
 
-  const _FriendsPlaceholderRow({
-    required this.items,
+  const _FriendActivityRow({
+    required this.activities,
     required this.domainIcon,
     required this.domainColor,
+    required this.onOpenItem,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (activities.isEmpty) {
+      return Container(
+        height: 150,
+        width: double.infinity,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.035),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Text(
+          'No new activity from people you follow this week.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            color: Colors.white.withOpacity(0.50),
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+
     return SizedBox(
-      height: 220,
+      height: _HomeScreenState._rowHeight,
       child: ListView.separated(
+        clipBehavior: Clip.none,
+        padding: const EdgeInsets.only(top: 8, bottom: 12),
         scrollDirection: Axis.horizontal,
-        itemCount: items.length,
+        itemCount: activities.length,
         separatorBuilder: (_, __) => const SizedBox(width: 16),
         itemBuilder: (context, index) {
-          final item = items[index];
-          final color = domainColor(item.domain);
+          return _FriendActivityCard(
+            activity: activities[index],
+            domainIcon: domainIcon,
+            domainColor: domainColor,
+            onOpenItem: onOpenItem,
+          );
+        },
+      ),
+    );
+  }
+}
 
-          return Container(
-            width: 220,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.04),
-              borderRadius: BorderRadius.circular(24),
-            ),
+class _FriendActivityCard extends StatefulWidget {
+  final _FriendActivity activity;
+  final IconData Function(String) domainIcon;
+  final Color Function(String) domainColor;
+  final ValueChanged<OnboardingMediaItem> onOpenItem;
+
+  const _FriendActivityCard({
+    required this.activity,
+    required this.domainIcon,
+    required this.domainColor,
+    required this.onOpenItem,
+  });
+
+  @override
+  State<_FriendActivityCard> createState() => _FriendActivityCardState();
+}
+
+class _FriendActivityCardState extends State<_FriendActivityCard> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final a = widget.activity;
+    final color = widget.domainColor(a.domain);
+
+    final icon = a.type == 'reviewed'
+        ? Icons.rate_review_rounded
+        : a.type == 'rated'
+            ? Icons.star_rounded
+            : a.type == 'favorited'
+                ? Icons.favorite_rounded
+                : Icons.bookmark_rounded;
+
+    final rating = a.rating > 0 ? a.rating : 0;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: () => widget.onOpenItem(a.toItem()),
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: _hovered ? -6 : 0),
+          duration: const Duration(milliseconds: 180),
+          builder: (_, offset, child) {
+            return Transform.translate(offset: Offset(0, offset), child: child);
+          },
+          child: SizedBox(
+            width: _HomeScreenState._cardWidth,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.34),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(
-                    domainIcon(item.domain),
-                    color: color,
-                    size: 20,
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        a.imageUrl.isNotEmpty
+                            ? Image.network(a.imageUrl, fit: BoxFit.cover)
+                            : _fallbackPoster(a.domain),
+                        Positioned(
+                          right: 10,
+                          bottom: 10,
+                          child: Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.45),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(icon, color: color, size: 18),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const Spacer(),
+
+                const SizedBox(height: 10),
+
                 Text(
-                  item.title,
-                  maxLines: 2,
+                  a.title,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
                     color: Colors.white,
-                    fontSize: 15.5,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    height: 1.25,
                   ),
                 ),
+
                 const SizedBox(height: 8),
-                Text(
-                  item.description,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
-                    color: Colors.white.withOpacity(0.60),
-                    fontSize: 13,
-                    height: 1.5,
+
+                if (rating > 0)
+                  Row(
+                    children: List.generate(5, (i) {
+                      return Icon(
+                        i < rating.round()
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        size: 14,
+                        color: const Color(0xFFFFC46B),
+                      );
+                    }),
                   ),
+
+                const SizedBox(height: 8),
+
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 11,
+                      backgroundImage: a.userPhotoUrl.isNotEmpty
+                          ? NetworkImage(a.userPhotoUrl)
+                          : null,
+                      backgroundColor: Colors.white.withOpacity(0.08),
+                      child: a.userPhotoUrl.isEmpty
+                          ? Text(
+                              a.displayName.isNotEmpty
+                                  ? a.displayName[0].toUpperCase()
+                                  : 'U',
+                              style: const TextStyle(fontSize: 9),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        a.username.isNotEmpty
+                            ? '@${a.username}'
+                            : a.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: Colors.white.withOpacity(0.7),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          );
-        },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _fallbackPoster(String domain) {
+    return Container(
+      color: Colors.white.withOpacity(0.05),
+      child: Center(
+        child: Icon(widget.domainIcon(domain), color: Colors.white54),
       ),
     );
   }
@@ -1323,12 +1716,15 @@ class _HomeLoadingState extends StatelessWidget {
         _shimmerBox(width: 120, height: 20),
         const SizedBox(height: 14),
         SizedBox(
-          height: 336,
+          height: _HomeScreenState._rowHeight,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: 4,
             separatorBuilder: (_, __) => const SizedBox(width: 16),
-            itemBuilder: (_, __) => _shimmerBox(width: 196, height: 336),
+            itemBuilder: (_, __) => _shimmerBox(
+              width: _HomeScreenState._cardWidth,
+              height: _HomeScreenState._rowHeight,
+            ),
           ),
         ),
         const SizedBox(height: 30),
@@ -1337,19 +1733,25 @@ class _HomeLoadingState extends StatelessWidget {
         _shimmerBox(width: 120, height: 20),
         const SizedBox(height: 14),
         SizedBox(
-          height: 336,
+          height: _HomeScreenState._rowHeight,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: 4,
             separatorBuilder: (_, __) => const SizedBox(width: 16),
-            itemBuilder: (_, __) => _shimmerBox(width: 196, height: 336),
+            itemBuilder: (_, __) => _shimmerBox(
+              width: _HomeScreenState._cardWidth,
+              height: _HomeScreenState._rowHeight,
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _shimmerBox({required double width, required double height}) {
+  Widget _shimmerBox({
+    required double width,
+    required double height,
+  }) {
     return Container(
       width: width,
       height: height,
@@ -1459,8 +1861,12 @@ class _AiCornerButtonState extends State<_AiCornerButton> {
   Widget build(BuildContext context) {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onEnter: (_) {
+        if (mounted) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (mounted) setState(() => _hovered = false);
+      },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
