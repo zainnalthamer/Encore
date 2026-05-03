@@ -6,14 +6,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../../core/services/cloudinary_service.dart';
 
 import '../../../core/models/onboarding_media_item.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/services/cloudinary_service.dart';
 import '../../../core/services/social_service.dart';
 import '../../items/screens/item_details_screen.dart';
 import '../../settings/screens/settings_screen.dart';
 import 'edit_profile_screen.dart';
+import 'shelf_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? userId;
@@ -347,132 +348,126 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ],
                     ),
                   ),
-                  SliverToBoxAdapter(
+                                    SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 36),
+                      padding: const EdgeInsets.fromLTRB(22, 18, 22, 10),
                       child: Column(
                         children: [
-                          const SizedBox(height: 5),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 760),
-                            child: Column(
-                              children: [
-                                Text(
-                                  displayName,
-                                  textAlign: TextAlign.center,
-                                  style: GoogleFonts.inter(
-                                    color: Colors.white,
-                                    fontSize: 34,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -1.1,
-                                    height: 1,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                if (username.isNotEmpty)
-                                  Text(
-                                    '@$username',
-                                    textAlign: TextAlign.center,
-                                    style: GoogleFonts.inter(
-                                      color: Colors.white.withOpacity(0.70),
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                const SizedBox(height: 14),
-                                SizedBox(
-                                  width: 680,
-                                  child: Text(
-                                    bio.isNotEmpty ? bio : 'No bio added yet.',
-                                    textAlign: TextAlign.center,
-                                    style: GoogleFonts.inter(
-                                      color: Colors.white.withOpacity(0.62),
-                                      fontSize: 14.5,
-                                      height: 1.65,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-                                Wrap(
-                                  alignment: WrapAlignment.center,
-                                  spacing: 28,
-                                  runSpacing: 12,
-                                  children: [
-                                    _CountTextBlock(
-                                      value: followersList.length.toString(),
-                                      label: 'Followers',
-                                    ),
-                                    _CountTextBlock(
-                                      value: followingList.length.toString(),
-                                      label: 'Following',
-                                    ),
-                                  ],
-                                ),
-                                if (!isOwnProfile && currentUid != null) ...[
-                                  const SizedBox(height: 22),
-                                  _FollowButton(
-                                    targetUid: profileUid,
-                                    currentUid: currentUid,
-                                    followers: followersList,
-                                    socialService: _socialService,
-                                  ),
-                                ],
-                              ],
+                          Text(
+                            displayName,
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.5,
                             ),
                           ),
-                          const SizedBox(height: 34),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 1080),
-                            child: Column(
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    for (int i = 0;
-                                        i < _sections.length;
-                                        i++) ...[
-                                      _TopSectionTab(
-                                        label: _sections[i],
-                                        selected:
-                                            _selectedSection == _sections[i],
-                                        onTap: () {
-                                          setState(() {
-                                            _selectedSection = _sections[i];
-                                          });
-                                        },
+                          if (username.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              '@$username',
+                              style: GoogleFonts.inter(
+                                color: Colors.white.withOpacity(0.55),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          if (bio.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              bio,
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                color: Colors.white.withOpacity(0.7),
+                                fontSize: 13.5,
+                                height: 1.45,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 18),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _CountTextBlock(
+                                value: followersList.length.toString(),
+                                label: 'Followers',
+                              ),
+                              const SizedBox(width: 36),
+                              _CountTextBlock(
+                                value: followingList.length.toString(),
+                                label: 'Following',
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              for (int i = 0; i < _sections.length; i++) ...[
+                                _TopSectionTab(
+                                  label: _sections[i],
+                                  selected:
+                                      _selectedSection == _sections[i],
+                                  onTap: () {
+                                    if (_selectedSection == _sections[i]) {
+                                      return;
+                                    }
+                                    setState(() {
+                                      _selectedSection = _sections[i];
+                                    });
+                                  },
+                                ),
+                                if (i != _sections.length - 1)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    child: Text(
+                                      '|',
+                                      style: GoogleFonts.inter(
+                                        color: Colors.white.withOpacity(0.2),
+                                        fontSize: 13,
                                       ),
-                                      if (i != _sections.length - 1)
-                                        Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 14,
-                                          ),
-                                          child: Text(
-                                            '|',
-                                            style: GoogleFonts.inter(
-                                              color:
-                                                  Colors.white.withOpacity(0.22),
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ],
-                                ),
-                                const SizedBox(height: 30),
-                                _buildSectionContent(
-                                  isOwnProfile: isOwnProfile,
-                                  profileUid: profileUid,
-                                ),
+                                    ),
+                                  ),
                               ],
-                            ),
+                            ],
                           ),
+                          const SizedBox(height: 18),
                         ],
+                      ),
+                    ),
+                  ),
+
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(22, 0, 22, 120),
+                      child: _buildSectionContent(
+                        isOwnProfile: isOwnProfile,
+                        profileUid: profileUid,
                       ),
                     ),
                   ),
                 ],
               ),
+
+              // FLOATING ADD BUTTON FOR SHELVES
+              if (isOwnProfile && _selectedSection == 'Shelves')
+                Positioned(
+                  right: 20,
+                  bottom: 20,
+                  child: FloatingActionButton(
+                    backgroundColor: const Color(0xFFFF8B3D),
+                    foregroundColor: Colors.black,
+                    elevation: 10,
+                    shape: const CircleBorder(),
+                    onPressed: () =>
+                        _showCreateShelfPopup(context, profileUid),
+                    child: const Icon(Icons.add_rounded, size: 30),
+                  ),
+                ),
             ],
           );
         },
@@ -482,36 +477,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _headerFallback() {
     return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF0C0C10), Color(0xFF111118), Color(0xFF171724)],
-        ),
-      ),
+      width: double.infinity,
+      height: double.infinity,
+      color: const Color(0xFF111115),
     );
   }
 
-  Widget _avatarFallback(String displayName) {
-    final first =
-        displayName.trim().isNotEmpty ? displayName.trim()[0].toUpperCase() : 'U';
+  Widget _avatarFallback(String name) {
+    final letter =
+        name.isNotEmpty ? name.trim().substring(0, 1).toUpperCase() : '?';
 
     return Container(
-      color: const Color(0xFF141419),
-      child: Center(
-        child: Text(
-          first,
-          style: GoogleFonts.inter(
-            color: Colors.white,
-            fontSize: 38,
-            fontWeight: FontWeight.w800,
-          ),
+      color: const Color(0xFF1A1A20),
+      alignment: Alignment.center,
+      child: Text(
+        letter,
+        style: GoogleFonts.inter(
+          color: Colors.white,
+          fontSize: 36,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );
   }
 }
-
 class _ShelvesSection extends StatelessWidget {
   final String profileUid;
   final bool isOwnProfile;
@@ -529,64 +518,43 @@ class _ShelvesSection extends StatelessWidget {
         .collection('shelves')
         .orderBy('updatedAt', descending: true);
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: ref.snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return const _SectionSurface(
-                child: _LargeInfoBlock(
-                  title: 'Could not load shelves',
-                  body: 'Check Firestore rules or shelf data.',
-                ),
-              );
-            }
-
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              );
-            }
-
-            final docs = snapshot.data?.docs ?? [];
-
-            if (docs.isEmpty) {
-              return const _SectionSurface(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 42),
-                  child: _LargeInfoBlock(
-                    title: 'No shelves yet',
-                    body: 'Create collections for movies, shows, books, and games.',
-                  ),
-                ),
-              );
-            }
-
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 86),
-              child: _ShelvesGrid(
-                docs: docs,
-                isOwnProfile: isOwnProfile,
-              ),
-            );
-          },
-        ),
-        if (isOwnProfile)
-          Positioned(
-            right: 10,
-            bottom: 10,
-            child: FloatingActionButton(
-              backgroundColor: const Color(0xFFFF8B3D),
-              foregroundColor: Colors.black,
-              elevation: 10,
-              shape: const CircleBorder(),
-              onPressed: () => _showCreateShelfPopup(context, profileUid),
-              child: const Icon(Icons.add_rounded, size: 32),
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: ref.snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const _SectionSurface(
+            child: _LargeInfoBlock(
+              title: 'Could not load shelves',
+              body: 'Check Firestore rules or shelf data.',
             ),
-          ),
-      ],
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+
+        if (docs.isEmpty) {
+          return const _SectionSurface(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 42),
+              child: _LargeInfoBlock(
+                title: 'No shelves yet',
+                body: 'Create collections for movies, shows, books, and games.',
+              ),
+            ),
+          );
+        }
+
+        return _ShelvesGrid(
+          docs: docs,
+          isOwnProfile: isOwnProfile,
+        );
+      },
     );
   }
 }
@@ -620,14 +588,16 @@ class _ShelvesGrid extends StatelessWidget {
           itemCount: docs.length,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: count,
-            crossAxisSpacing: 20,
+            crossAxisSpacing: 18,
             mainAxisSpacing: 30,
-            childAspectRatio: 0.68,
+            childAspectRatio: 0.66,
           ),
           itemBuilder: (context, index) {
+            final data = docs[index].data();
+
             return _ShelfBoardCard(
               shelfId: docs[index].id,
-              data: docs[index].data(),
+              data: data,
               isOwnProfile: isOwnProfile,
             );
           },
@@ -653,13 +623,20 @@ class _ShelfBoardCard extends StatelessWidget {
     final name = (data['name'] ?? 'Untitled shelf').toString();
     final description = (data['description'] ?? '').toString().trim();
     final imageUrl = (data['imageUrl'] ?? '').toString().trim();
+    final ownerId = (data['ownerId'] ?? '').toString();
     final itemsCountRaw = data['itemsCount'];
     final itemsCount = itemsCountRaw is num ? itemsCountRaw.toInt() : 0;
 
     return GestureDetector(
       onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Shelf screen will be added next.')),
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ShelfScreen(
+              ownerId: ownerId,
+              shelfId: shelfId,
+            ),
+          ),
         );
       },
       child: MouseRegion(
@@ -725,9 +702,7 @@ class _ShelfBoardCard extends StatelessWidget {
 
   Widget _shelfFallback() {
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF18181D),
-      ),
+      color: const Color(0xFF18181D),
       child: Center(
         child: Icon(
           Icons.grid_view_rounded,
@@ -749,7 +724,6 @@ Future<void> _showCreateShelfPopup(
     builder: (_) => _CreateShelfDialog(profileUid: profileUid),
   );
 }
-
 class _CreateShelfDialog extends StatefulWidget {
   final String profileUid;
 
@@ -764,11 +738,13 @@ class _CreateShelfDialog extends StatefulWidget {
 class _CreateShelfDialogState extends State<_CreateShelfDialog> {
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final ImagePicker _picker = ImagePicker();
-  final CloudinaryService _cloudinary = CloudinaryService();
 
+  final ImagePicker _picker = ImagePicker();
+  final CloudinaryService _cloudinaryService = CloudinaryService();
+
+  XFile? _selectedImage;
   Uint8List? _selectedImageBytes;
-  String? _selectedImageName;
+
   bool _saving = false;
 
   @override
@@ -791,105 +767,77 @@ class _CreateShelfDialogState extends State<_CreateShelfDialog> {
     if (!mounted) return;
 
     setState(() {
+      _selectedImage = picked;
       _selectedImageBytes = bytes;
-      _selectedImageName = picked.name;
     });
   }
-
-  // Future<String> _tryUploadShelfImage(String shelfId) async {
-  //   if (_selectedImageBytes == null) return '';
-
-  //   try {
-  //     final safeFileName =
-  //         (_selectedImageName == null || _selectedImageName!.trim().isEmpty)
-  //             ? 'cover.jpg'
-  //             : _selectedImageName!.replaceAll(' ', '_');
-
-  //     final ref = FirebaseStorage.instance
-  //         .ref()
-  //         .child('shelves')
-  //         .child(widget.profileUid)
-  //         .child(shelfId)
-  //         .child(safeFileName);
-
-  //     await ref.putData(
-  //       _selectedImageBytes!,
-  //       SettableMetadata(contentType: 'image/jpeg'),
-  //     );
-
-  //     return await ref.getDownloadURL();
-  //   } catch (_) {
-  //     return '';
-  //   }
-  // }
 
   Future<void> _createShelf() async {
-  final name = _nameController.text.trim();
-  final description = _descriptionController.text.trim();
-  final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final name = _nameController.text.trim();
+    final description = _descriptionController.text.trim();
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
-  if (name.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Shelf name is required.')),
-    );
-    return;
-  }
-
-  if (currentUid == null || currentUid != widget.profileUid) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('You can only create shelves on your profile.')),
-    );
-    return;
-  }
-
-  setState(() => _saving = true);
-
-  try {
-    String imageUrl = '';
-
-    if (_selectedImageBytes != null) {
-      final pickedFile = XFile.fromData(
-        _selectedImageBytes!,
-        name: _selectedImageName ?? 'cover.jpg',
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Shelf name is required.')),
       );
-
-      imageUrl = await _cloudinary.uploadShelfImage(pickedFile);
+      return;
     }
 
-    final shelfRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(widget.profileUid)
-        .collection('shelves')
-        .doc();
+    if (currentUid == null || currentUid != widget.profileUid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You can only create shelves on your profile.'),
+        ),
+      );
+      return;
+    }
 
-    await shelfRef.set({
-      'name': name,
-      'description': description,
-      'imageUrl': imageUrl,
-      'imageSource': imageUrl.isEmpty ? 'empty' : 'cloudinary',
-      'itemIds': <String>[],
-      'itemsCount': 0,
-      'ownerId': widget.profileUid,
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    setState(() => _saving = true);
 
-    if (!mounted) return;
-    Navigator.of(context).pop();
+    try {
+      String imageUrl = '';
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Shelf created.')),
-    );
-  } catch (e) {
-    if (!mounted) return;
+      if (_selectedImage != null) {
+        imageUrl = await _cloudinaryService.uploadShelfImage(_selectedImage!);
+      }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Could not create shelf: $e')),
-    );
-  } finally {
-    if (mounted) setState(() => _saving = false);
+      final shelfRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.profileUid)
+          .collection('shelves')
+          .doc();
+
+      await shelfRef.set({
+        'name': name,
+        'description': description,
+        'imageUrl': imageUrl,
+        'imageSource': imageUrl.isEmpty ? 'empty' : 'cloudinary',
+        'itemIds': <String>[],
+        'itemsCount': 0,
+        'ownerId': widget.profileUid,
+        'collaboratorIds': <String>[],
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+
+      Navigator.of(context).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Shelf created.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not create shelf: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -899,10 +847,10 @@ class _CreateShelfDialogState extends State<_CreateShelfDialog> {
       backgroundColor: const Color(0xFF101014),
       insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(30),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 620),
+        constraints: const BoxConstraints(maxWidth: 640),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(28, 24, 28, 26),
           child: SingleChildScrollView(
@@ -941,7 +889,7 @@ class _CreateShelfDialogState extends State<_CreateShelfDialog> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 26),
+                const SizedBox(height: 24),
                 compact
                     ? Column(
                         children: [
@@ -2022,6 +1970,7 @@ class _LargeInfoBlock extends StatelessWidget {
       children: [
         Text(
           title,
+          textAlign: TextAlign.center,
           style: GoogleFonts.inter(
             color: Colors.white,
             fontSize: 18,
