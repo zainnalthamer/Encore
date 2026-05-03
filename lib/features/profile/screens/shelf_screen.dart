@@ -1,19 +1,19 @@
-import 'dart:convert';
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/models/onboarding_media_item.dart';
 import '../../../core/services/cloudinary_service.dart';
+import '../../../core/services/discover_api_service.dart';
 import '../../items/screens/item_details_screen.dart';
 
-const String _tmdbApiKey = 'PUT_YOUR_TMDB_KEY_HERE';
-const String _rawgApiKey = 'PUT_YOUR_RAWG_KEY_HERE';
+const Color kShelfBg = Color(0xFF050507);
+const Color kShelfAccent = Color(0xFFFF8B3D);
 
 class ShelfScreen extends StatefulWidget {
   final String ownerId;
@@ -65,10 +65,10 @@ class _ShelfScreenState extends State<ShelfScreen> {
   Future<void> _deleteShelf() async {
     final confirm = await showDialog<bool>(
       context: context,
-      barrierColor: Colors.black.withOpacity(0.75),
+      barrierColor: Colors.black.withOpacity(0.76),
       builder: (_) => const _ConfirmDialog(
-        title: 'Delete shelf?',
-        body: 'This will permanently remove the shelf and all items inside it.',
+        title: 'Delete this shelf?',
+        body: 'This removes the shelf and everything inside it.',
         confirmText: 'Delete',
         destructive: true,
       ),
@@ -93,10 +93,10 @@ class _ShelfScreenState extends State<ShelfScreen> {
   Future<void> _leaveShelf() async {
     final confirm = await showDialog<bool>(
       context: context,
-      barrierColor: Colors.black.withOpacity(0.75),
+      barrierColor: Colors.black.withOpacity(0.76),
       builder: (_) => const _ConfirmDialog(
         title: 'Leave shelf?',
-        body: 'You will no longer be able to add or remove items from this shelf.',
+        body: 'You will lose access to editing this shelf.',
         confirmText: 'Leave',
         destructive: true,
       ),
@@ -169,14 +169,30 @@ class _ShelfScreenState extends State<ShelfScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF050507),
+      backgroundColor: kShelfBg,
+      floatingActionButton: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: _shelfRef.snapshots(),
+        builder: (context, snapshot) {
+          final shelf = snapshot.data?.data();
+          if (shelf == null || !_canEdit(shelf)) return const SizedBox.shrink();
+
+          return FloatingActionButton(
+            backgroundColor: kShelfAccent,
+            foregroundColor: Colors.black,
+            shape: const CircleBorder(),
+            elevation: 12,
+            onPressed: () => _openAddItemsDialog(shelf),
+            child: const Icon(Icons.add_rounded, size: 32),
+          );
+        },
+      ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: _shelfRef.snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return _ErrorState(
               title: 'Could not load shelf',
-              body: 'Check Firestore rules or shelf data.',
+              body: 'Check your Firestore shelf rules.',
               onBack: () => Navigator.of(context).pop(),
             );
           }
@@ -200,61 +216,56 @@ class _ShelfScreenState extends State<ShelfScreen> {
           final name = (shelf['name'] ?? 'Untitled shelf').toString();
           final description = (shelf['description'] ?? '').toString().trim();
           final imageUrl = (shelf['imageUrl'] ?? '').toString().trim();
-          final ownerId = (shelf['ownerId'] ?? widget.ownerId).toString();
           final collaboratorIds = ((shelf['collaboratorIds'] as List?) ?? [])
               .map((e) => e.toString())
               .toList();
+          final itemCount = (shelf['itemsCount'] ?? 0) is num
+              ? (shelf['itemsCount'] as num).toInt()
+              : 0;
 
           final isOwner = _isOwner(shelf);
           final isCollaborator = _isCollaborator(shelf);
           final canEdit = _canEdit(shelf);
+          final peopleCount = collaboratorIds.length + 1;
 
-          return Stack(
-            children: [
-              CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: _ShelfHeader(
-                      name: name,
-                      description: description,
-                      imageUrl: imageUrl,
-                      ownerId: ownerId,
-                      collaboratorIds: collaboratorIds,
-                      canEdit: canEdit,
-                      isOwner: isOwner,
-                      isCollaborator: isCollaborator,
-                      onBack: () => Navigator.of(context).pop(),
-                      onEdit: canEdit ? () => _openEditShelfDialog(shelf) : null,
-                      onInvite: isOwner ? () => _openInviteDialog(shelf) : null,
-                      onDelete: isOwner ? _deleteShelf : null,
-                      onLeave: isCollaborator && !isOwner ? _leaveShelf : null,
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(22, 8, 22, 120),
-                      child: _ShelfItemsSection(
-                        itemsRef: _itemsRef,
-                        canEdit: canEdit,
-                        onRemove: _removeItem,
-                      ),
-                    ),
-                  ),
-                ],
+          return CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: _ShelfTopBar(
+                  canEdit: canEdit,
+                  isOwner: isOwner,
+                  isCollaborator: isCollaborator,
+                  onBack: () => Navigator.of(context).pop(),
+                  onEdit: canEdit ? () => _openEditShelfDialog(shelf) : null,
+                  onInvite: isOwner ? () => _openInviteDialog(shelf) : null,
+                  onDelete: isOwner ? _deleteShelf : null,
+                  onLeave: isCollaborator && !isOwner ? _leaveShelf : null,
+                ),
               ),
-              if (canEdit)
-                Positioned(
-                  right: 22,
-                  bottom: 22,
-                  child: FloatingActionButton(
-                    backgroundColor: const Color(0xFFFF8B3D),
-                    foregroundColor: Colors.black,
-                    elevation: 12,
-                    shape: const CircleBorder(),
-                    onPressed: () => _openAddItemsDialog(shelf),
-                    child: const Icon(Icons.add_rounded, size: 31),
+              SliverToBoxAdapter(
+                child: _ShelfHeader(
+                  name: name,
+                  description: description,
+                  imageUrl: imageUrl,
+                  itemCount: itemCount,
+                  peopleCount: peopleCount,
+                  role: isOwner
+                      ? 'Owner'
+                      : isCollaborator
+                          ? 'Collaborator'
+                          : 'Viewer',
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(22, 18, 22, 110),
+                  child: _ShelfItemsGrid(
+                    itemsRef: _itemsRef,
+                    canEdit: canEdit,
+                    onRemove: _removeItem,
                   ),
                 ),
+              ),
             ],
           );
         },
@@ -262,12 +273,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
     );
   }
 }
-class _ShelfHeader extends StatelessWidget {
-  final String name;
-  final String description;
-  final String imageUrl;
-  final String ownerId;
-  final List<String> collaboratorIds;
+class _ShelfTopBar extends StatelessWidget {
   final bool canEdit;
   final bool isOwner;
   final bool isCollaborator;
@@ -277,12 +283,7 @@ class _ShelfHeader extends StatelessWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onLeave;
 
-  const _ShelfHeader({
-    required this.name,
-    required this.description,
-    required this.imageUrl,
-    required this.ownerId,
-    required this.collaboratorIds,
+  const _ShelfTopBar({
     required this.canEdit,
     required this.isOwner,
     required this.isCollaborator,
@@ -295,174 +296,316 @@ class _ShelfHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final peopleCount = 1 + collaboratorIds.length;
-
     return SafeArea(
       bottom: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 26),
-        child: Column(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 4),
+        child: Row(
           children: [
-            Row(
-              children: [
-                _CircleIconButton(
-                  icon: Icons.arrow_back_rounded,
-                  onTap: onBack,
+            _RoundIconButton(
+              icon: Icons.arrow_back_rounded,
+              onTap: onBack,
+            ),
+            const Spacer(),
+            if (canEdit)
+              _RoundIconButton(
+                icon: Icons.edit_rounded,
+                onTap: onEdit,
+              ),
+            if (isOwner) ...[
+              const SizedBox(width: 10),
+              _RoundIconButton(
+                icon: Icons.person_add_alt_1_rounded,
+                onTap: onInvite,
+              ),
+            ],
+            if (isOwner || (isCollaborator && !isOwner)) ...[
+              const SizedBox(width: 10),
+              _RoundIconButton(
+                icon: Icons.more_horiz_rounded,
+                onTap: () {
+                  showModalBottomSheet(
+                    context: context,
+                    backgroundColor: const Color(0xFF101014),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(28),
+                      ),
+                    ),
+                    builder: (_) => _ShelfOptionsSheet(
+                      isOwner: isOwner,
+                      isCollaborator: isCollaborator && !isOwner,
+                      onDelete: onDelete,
+                      onLeave: onLeave,
+                    ),
+                  );
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShelfHeader extends StatelessWidget {
+  final String name;
+  final String description;
+  final String imageUrl;
+  final int itemCount;
+  final int peopleCount;
+  final String role;
+
+  const _ShelfHeader({
+    required this.name,
+    required this.description,
+    required this.imageUrl,
+    required this.itemCount,
+    required this.peopleCount,
+    required this.role,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 22, 22, 14),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 720;
+
+          final cover = Container(
+            width: compact ? 124 : 184,
+            height: compact ? 162 : 242,
+            decoration: BoxDecoration(
+              color: const Color(0xFF15151A),
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(color: Colors.white.withOpacity(0.08)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.38),
+                  blurRadius: 30,
+                  offset: const Offset(0, 18),
                 ),
-                const Spacer(),
-                if (canEdit)
-                  _CircleIconButton(
-                    icon: Icons.edit_rounded,
-                    onTap: onEdit,
-                  ),
-                if (isOwner) ...[
-                  const SizedBox(width: 10),
-                  _CircleIconButton(
-                    icon: Icons.person_add_alt_1_rounded,
-                    onTap: onInvite,
-                  ),
-                  const SizedBox(width: 10),
-                  _CircleIconButton(
-                    icon: Icons.delete_outline_rounded,
-                    onTap: onDelete,
-                    destructive: true,
-                  ),
-                ],
-                if (isCollaborator && !isOwner) ...[
-                  const SizedBox(width: 10),
-                  _CircleIconButton(
-                    icon: Icons.logout_rounded,
-                    onTap: onLeave,
-                    destructive: true,
-                  ),
-                ],
               ],
             ),
-            const SizedBox(height: 30),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 920),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 136,
-                    height: 136,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF17171C),
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(color: Colors.white.withOpacity(0.08)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.28),
-                          blurRadius: 30,
-                          offset: const Offset(0, 18),
-                        ),
-                      ],
+            clipBehavior: Clip.antiAlias,
+            child: imageUrl.isNotEmpty
+                ? Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (_, __, ___) => _coverFallback(),
+                  )
+                : _coverFallback(),
+          );
+
+          final details = Column(
+            crossAxisAlignment:
+                compact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+            children: [
+              Text(
+                'curated shelf',
+                style: GoogleFonts.inter(
+                  color: kShelfAccent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.4,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                name,
+                textAlign: compact ? TextAlign.center : TextAlign.start,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: compact ? 38 : 58,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -2.4,
+                  height: 0.92,
+                ),
+              ),
+              if (description.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 650),
+                  child: Text(
+                    description,
+                    textAlign: compact ? TextAlign.center : TextAlign.start,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.58),
+                      fontSize: 14,
+                      height: 1.55,
+                      fontWeight: FontWeight.w500,
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: imageUrl.isNotEmpty
-                        ? Image.network(
-                            imageUrl,
-                            fit: BoxFit.cover,
-                            filterQuality: FilterQuality.high,
-                            errorBuilder: (_, __, ___) => _coverFallback(),
-                          )
-                        : _coverFallback(),
                   ),
-                  const SizedBox(width: 22),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'SHELF',
-                          style: GoogleFonts.inter(
-                            color: const Color(0xFFFF8B3D),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            color: Colors.white,
-                            fontSize: 38,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -1.4,
-                            height: 0.98,
-                          ),
-                        ),
-                        if (description.isNotEmpty) ...[
-                          const SizedBox(height: 11),
-                          Text(
-                            description,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
-                              color: Colors.white.withOpacity(0.58),
-                              fontSize: 13.5,
-                              height: 1.45,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 15),
-                        Wrap(
-                          spacing: 9,
-                          runSpacing: 8,
-                          children: [
-                            _SoftPill(
-                              icon: isOwner
-                                  ? Icons.workspace_premium_rounded
-                                  : isCollaborator
-                                      ? Icons.group_rounded
-                                      : Icons.visibility_rounded,
-                              text: isOwner
-                                  ? 'Owner'
-                                  : isCollaborator
-                                      ? 'Collaborator'
-                                      : 'Viewing',
-                            ),
-                            _SoftPill(
-                              icon: Icons.people_alt_rounded,
-                              text: '$peopleCount ${peopleCount == 1 ? 'person' : 'people'}',
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                ),
+              ],
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: compact ? WrapAlignment.center : WrapAlignment.start,
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _ShelfMetric(
+                    icon: Icons.auto_awesome_mosaic_rounded,
+                    text: '$itemCount items',
+                  ),
+                  _ShelfMetric(
+                    icon: Icons.people_alt_rounded,
+                    text: '$peopleCount ${peopleCount == 1 ? 'person' : 'people'}',
+                  ),
+                  _ShelfMetric(
+                    icon: Icons.lock_open_rounded,
+                    text: role,
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
+            ],
+          );
+
+          if (compact) {
+            return Column(
+              children: [
+                cover,
+                const SizedBox(height: 22),
+                details,
+              ],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              cover,
+              const SizedBox(width: 28),
+              Expanded(child: details),
+            ],
+          );
+        },
       ),
     );
   }
 
   Widget _coverFallback() {
     return Container(
-      color: const Color(0xFF18181D),
-      child: Icon(
-        Icons.grid_view_rounded,
-        color: Colors.white.withOpacity(0.28),
-        size: 42,
+      color: const Color(0xFF15151A),
+      child: Center(
+        child: Icon(
+          Icons.auto_awesome_mosaic_rounded,
+          color: Colors.white.withOpacity(0.28),
+          size: 44,
+        ),
       ),
     );
   }
 }
 
-class _ShelfItemsSection extends StatelessWidget {
+class _ShelfMetric extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _ShelfMetric({
+    required this.icon,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.055),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.07)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white.withOpacity(0.62), size: 15),
+          const SizedBox(width: 7),
+          Text(
+            text,
+            style: GoogleFonts.inter(
+              color: Colors.white.withOpacity(0.70),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShelfOptionsSheet extends StatelessWidget {
+  final bool isOwner;
+  final bool isCollaborator;
+  final VoidCallback? onDelete;
+  final VoidCallback? onLeave;
+
+  const _ShelfOptionsSheet({
+    required this.isOwner,
+    required this.isCollaborator,
+    required this.onDelete,
+    required this.onLeave,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.18),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(height: 18),
+            if (isOwner)
+              _SheetAction(
+                icon: Icons.delete_outline_rounded,
+                title: 'Delete shelf',
+                subtitle: 'Remove this shelf permanently',
+                destructive: true,
+                onTap: () {
+                  Navigator.pop(context);
+                  onDelete?.call();
+                },
+              ),
+            if (isCollaborator)
+              _SheetAction(
+                icon: Icons.logout_rounded,
+                title: 'Leave shelf',
+                subtitle: 'Remove yourself from this shelf',
+                destructive: true,
+                onTap: () {
+                  Navigator.pop(context);
+                  onLeave?.call();
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+class _ShelfItemsGrid extends StatelessWidget {
   final CollectionReference<Map<String, dynamic>> itemsRef;
   final bool canEdit;
   final Future<void> Function(String itemId) onRemove;
 
-  const _ShelfItemsSection({
+  const _ShelfItemsGrid({
     required this.itemsRef,
     required this.canEdit,
     required this.onRemove,
@@ -494,7 +637,7 @@ class _ShelfItemsSection extends StatelessWidget {
         if (docs.isEmpty) {
           return const _ShelfInfoBlock(
             title: 'No items yet',
-            body: 'Tap + to search and add movies, shows, books, or games.',
+            body: 'Tap + to search movies, shows, books, or games.',
           );
         }
 
@@ -503,17 +646,17 @@ class _ShelfItemsSection extends StatelessWidget {
             final width = constraints.maxWidth;
 
             final count = width >= 1200
-                ? 7
-                : width >= 980
-                    ? 6
-                    : width >= 760
-                        ? 5
-                        : width >= 540
-                            ? 4
-                            : 3;
+                ? 6
+                : width >= 950
+                    ? 5
+                    : width >= 720
+                        ? 4
+                        : width >= 500
+                            ? 3
+                            : 2;
 
-            final itemWidth = (width - ((count - 1) * 14)) / count;
-            final itemHeight = itemWidth / 0.68 + 56;
+            final itemWidth = (width - ((count - 1) * 16)) / count;
+            final itemHeight = itemWidth / 0.68 + 88;
 
             return GridView.builder(
               shrinkWrap: true,
@@ -521,8 +664,8 @@ class _ShelfItemsSection extends StatelessWidget {
               itemCount: docs.length,
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: count,
-                crossAxisSpacing: 14,
-                mainAxisSpacing: 24,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 26,
                 childAspectRatio: itemWidth / itemHeight,
               ),
               itemBuilder: (context, index) {
@@ -571,6 +714,10 @@ class _ShelfItemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final item = _toItem();
 
+    final addedByName = (data['addedByName'] ?? 'Someone').toString();
+    final addedByUsername = (data['addedByUsername'] ?? '').toString();
+    final addedByAvatar = (data['addedByAvatar'] ?? '').toString();
+
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
@@ -581,15 +728,20 @@ class _ShelfItemCard extends StatelessWidget {
       },
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(17),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF101014),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withOpacity(0.055)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Stack(
+                  children: [
+                    Positioned.fill(
                       child: item.imageUrl.isNotEmpty
                           ? Image.network(
                               item.imageUrl,
@@ -599,75 +751,98 @@ class _ShelfItemCard extends StatelessWidget {
                             )
                           : _fallbackPoster(),
                     ),
-                  ),
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(17),
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            Colors.black.withOpacity(0.08),
-                            Colors.black.withOpacity(0.35),
-                          ],
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withOpacity(0.02),
+                              Colors.black.withOpacity(0.08),
+                              Colors.black.withOpacity(0.45),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  if (canEdit)
                     Positioned(
-                      top: 8,
-                      right: 8,
-                      child: _SmallCircleButton(
-                        icon: Icons.remove_rounded,
-                        onTap: onRemove,
+                      left: 10,
+                      bottom: 10,
+                      child: _DomainChip(domain: item.domain),
+                    ),
+                    if (canEdit)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: _PosterMenuButton(onRemove: onRemove),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 12.8,
+                        fontWeight: FontWeight.w900,
+                        height: 1.2,
                       ),
                     ),
-                ],
+                    const SizedBox(height: 9),
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 11,
+                          backgroundColor: const Color(0xFF1B1B21),
+                          backgroundImage: addedByAvatar.isNotEmpty
+                              ? NetworkImage(addedByAvatar)
+                              : null,
+                          child: addedByAvatar.isEmpty
+                              ? Text(
+                                  addedByName.isNotEmpty
+                                      ? addedByName[0].toUpperCase()
+                                      : '?',
+                                  style: GoogleFonts.inter(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 7),
+                        Expanded(
+                          child: Text(
+                            addedByUsername.isNotEmpty
+                                ? '@$addedByUsername'
+                                : addedByName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              color: Colors.white.withOpacity(0.48),
+                              fontSize: 10.8,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              item.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontSize: 12.6,
-                fontWeight: FontWeight.w800,
-                height: 1.2,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _domainLabel(item.domain),
-              style: GoogleFonts.inter(
-                color: Colors.white.withOpacity(0.42),
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
-  }
-
-  String _domainLabel(String domain) {
-    switch (domain) {
-      case 'movies':
-        return 'Movie';
-      case 'shows':
-        return 'Show';
-      case 'books':
-        return 'Book';
-      case 'games':
-        return 'Game';
-      default:
-        return 'Item';
-    }
   }
 
   Widget _fallbackPoster() {
@@ -677,6 +852,74 @@ class _ShelfItemCard extends StatelessWidget {
         child: Icon(
           Icons.image_outlined,
           color: Colors.white.withOpacity(0.24),
+        ),
+      ),
+    );
+  }
+}
+
+class _PosterMenuButton extends StatelessWidget {
+  final VoidCallback onRemove;
+
+  const _PosterMenuButton({
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withOpacity(0.54),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: () {
+          showModalBottomSheet(
+            context: context,
+            backgroundColor: const Color(0xFF101014),
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
+            ),
+            builder: (_) => SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    _SheetAction(
+                      icon: Icons.playlist_remove_rounded,
+                      title: 'Remove from shelf',
+                      subtitle: 'This only removes it from this shelf',
+                      destructive: true,
+                      onTap: () {
+                        Navigator.pop(context);
+                        onRemove();
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+        child: const SizedBox(
+          width: 32,
+          height: 32,
+          child: Icon(
+            Icons.more_horiz_rounded,
+            color: Colors.white,
+            size: 19,
+          ),
         ),
       ),
     );
@@ -696,236 +939,381 @@ class _AddShelfItemsDialog extends StatefulWidget {
   });
 
   @override
-  State<_AddShelfItemsDialog> createState() =>
-      _AddShelfItemsDialogState();
+  State<_AddShelfItemsDialog> createState() => _AddShelfItemsDialogState();
 }
 
 class _AddShelfItemsDialogState extends State<_AddShelfItemsDialog> {
+  final DiscoverApiService _service = DiscoverApiService();
   final TextEditingController _searchController = TextEditingController();
 
-  List<Map<String, dynamic>> _results = [];
+  Timer? _debounce;
+  List<OnboardingMediaItem> _results = [];
+
   bool _loading = false;
+  String _error = '';
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
+  void _onSearchChanged(String value) {
+    _debounce?.cancel();
+
+    _debounce = Timer(const Duration(milliseconds: 450), () {
+      _searchAll(value);
+    });
+  }
+
   Future<void> _searchAll(String query) async {
-    if (query.trim().isEmpty) {
-      setState(() => _results = []);
+    final cleanQuery = query.trim();
+
+    if (cleanQuery.isEmpty) {
+      setState(() {
+        _results = [];
+        _error = '';
+        _loading = false;
+      });
       return;
     }
+
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+
+    try {
+      final results = await _service.searchAll(cleanQuery);
+
+      final seen = <String>{};
+      final unique = <OnboardingMediaItem>[];
+
+      for (final item in results) {
+        final key = '${item.domain}_${item.id}';
+        if (seen.contains(key)) continue;
+        seen.add(key);
+        unique.add(item);
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _results = unique;
+        _error = unique.isEmpty ? 'No results found.' : '';
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _results = [];
+        _error = 'Search failed. Check DiscoverApiService and API keys.';
+      });
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<Map<String, String>> _currentUserInfo() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      return {
+        'name': 'Someone',
+        'username': '',
+        'avatar': '',
+      };
+    }
+
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+
+    final data = doc.data() ?? {};
+
+    return {
+      'name': (data['displayName'] ?? data['name'] ?? user.displayName ?? 'Someone')
+          .toString(),
+      'username': (data['username'] ?? '').toString(),
+      'avatar': (data['photoUrl'] ?? data['avatarUrl'] ?? user.photoURL ?? '')
+          .toString(),
+    };
+  }
+
+  Future<void> _addItem(OnboardingMediaItem item) async {
+    final itemId = item.id;
+
+    if (itemId.isEmpty) return;
+    if (widget.existingItemIds.contains(itemId)) return;
 
     setState(() => _loading = true);
 
     try {
-      final futures = await Future.wait([
-        _searchTMDB(query),
-        _searchRAWG(query),
-        _searchBooks(query),
-      ]);
+      final userInfo = await _currentUserInfo();
 
-      final combined = [
-        ...futures[0],
-        ...futures[1],
-        ...futures[2],
-      ];
+      await widget.itemsRef.doc(itemId).set({
+        'itemId': item.id,
+        'title': item.title,
+        'domain': item.domain,
+        'imageUrl': item.imageUrl,
+        'source': item.source,
+        'description': item.description,
+        'genres': item.genres,
+        'tags': item.tags,
+        'addedBy': widget.currentUid,
+        'addedByName': userInfo['name'],
+        'addedByUsername': userInfo['username'],
+        'addedByAvatar': userInfo['avatar'],
+        'addedAt': FieldValue.serverTimestamp(),
+      });
 
-      setState(() => _results = combined);
-    } catch (_) {
-      setState(() => _results = []);
+      await widget.shelfRef.update({
+        'itemIds': FieldValue.arrayUnion([itemId]),
+        'itemsCount': FieldValue.increment(1),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+
+      Navigator.of(context).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Item added to shelf.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not add item: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
-
-    setState(() => _loading = false);
-  }
-
-  Future<List<Map<String, dynamic>>> _searchTMDB(String query) async {
-    final res = await http.get(Uri.parse(
-        'https://api.themoviedb.org/3/search/multi?api_key=$_tmdbApiKey&query=$query'));
-
-    final data = jsonDecode(res.body);
-
-    return (data['results'] as List)
-        .where((e) => e['media_type'] != 'person')
-        .map<Map<String, dynamic>>((e) {
-      final isMovie = e['media_type'] == 'movie';
-      final isTv = e['media_type'] == 'tv';
-
-      return {
-        'itemId': 'tmdb_${e['id']}',
-        'title': e['title'] ?? e['name'],
-        'domain': isMovie ? 'movies' : 'shows',
-        'imageUrl':
-            'https://image.tmdb.org/t/p/w500${e['poster_path']}',
-        'source': 'tmdb',
-      };
-    }).toList();
-  }
-
-  Future<List<Map<String, dynamic>>> _searchRAWG(String query) async {
-    final res = await http.get(Uri.parse(
-        'https://api.rawg.io/api/games?key=$_rawgApiKey&search=$query'));
-
-    final data = jsonDecode(res.body);
-
-    return (data['results'] as List).map<Map<String, dynamic>>((e) {
-      return {
-        'itemId': 'rawg_${e['id']}',
-        'title': e['name'],
-        'domain': 'games',
-        'imageUrl': e['background_image'],
-        'source': 'rawg',
-      };
-    }).toList();
-  }
-
-  Future<List<Map<String, dynamic>>> _searchBooks(String query) async {
-    final res = await http.get(Uri.parse(
-        'https://www.googleapis.com/books/v1/volumes?q=$query'));
-
-    final data = jsonDecode(res.body);
-
-    return (data['items'] as List).map<Map<String, dynamic>>((e) {
-      final info = e['volumeInfo'];
-
-      return {
-        'itemId': 'book_${e['id']}',
-        'title': info['title'],
-        'domain': 'books',
-        'imageUrl': info['imageLinks']?['thumbnail'] ?? '',
-        'source': 'books',
-      };
-    }).toList();
-  }
-
-  Future<void> _addItem(Map<String, dynamic> data) async {
-    final itemId = data['itemId'];
-
-    if (widget.existingItemIds.contains(itemId)) return;
-
-    await widget.itemsRef.doc(itemId).set({
-      ...data,
-      'addedBy': widget.currentUid,
-      'addedAt': FieldValue.serverTimestamp(),
-    });
-
-    await widget.shelfRef.update({
-      'itemIds': FieldValue.arrayUnion([itemId]),
-      'itemsCount': FieldValue.increment(1),
-    });
-
-    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: const Color(0xFF0E0E11),
+      backgroundColor: kShelfBg,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(32),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(22),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Text(
-                  'Add items',
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900, maxHeight: 760),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'Add to shelf',
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 25,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.9,
+                    ),
+                  ),
+                  const Spacer(),
+                  _DialogCloseButton(
+                    onTap: _loading ? null : () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Search movies, shows, books, and games.',
                   style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
+                    color: Colors.white.withOpacity(0.45),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                )
+              ),
+              const SizedBox(height: 18),
+              _SearchField(
+                controller: _searchController,
+                hint: 'Search anything...',
+                onChanged: _onSearchChanged,
+              ),
+              const SizedBox(height: 18),
+              Expanded(
+                child: _loading
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: kShelfAccent,
+                        ),
+                      )
+                    : _error.isNotEmpty
+                        ? _ShelfInfoBlock(
+                            title: 'No results',
+                            body: _error,
+                          )
+                        : _results.isEmpty
+                            ? const _ShelfInfoBlock(
+                                title: 'Start searching',
+                                body: 'Try a movie, show, book, or game title.',
+                              )
+                            : LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final width = constraints.maxWidth;
+
+                                  final count = width >= 760
+                                      ? 5
+                                      : width >= 560
+                                          ? 4
+                                          : width >= 390
+                                              ? 3
+                                              : 2;
+
+                                  return GridView.builder(
+                                    itemCount: _results.length,
+                                    gridDelegate:
+                                        SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: count,
+                                      crossAxisSpacing: 14,
+                                      mainAxisSpacing: 18,
+                                      childAspectRatio: 0.58,
+                                    ),
+                                    itemBuilder: (context, index) {
+                                      final item = _results[index];
+                                      final added =
+                                          widget.existingItemIds.contains(item.id);
+
+                                      return _AddItemResultCard(
+                                        item: item,
+                                        added: added,
+                                        loading: _loading,
+                                        onTap: added || _loading
+                                            ? null
+                                            : () => _addItem(item),
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddItemResultCard extends StatelessWidget {
+  final OnboardingMediaItem item;
+  final bool added;
+  final bool loading;
+  final VoidCallback? onTap;
+
+  const _AddItemResultCard({
+    required this.item,
+    required this.added,
+    required this.loading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = _image(item.imageUrl);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: MouseRegion(
+        cursor: added || loading
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        child: Opacity(
+          opacity: added ? 0.48 : 1,
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF111116),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withOpacity(0.055)),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      imageUrl.isNotEmpty
+                          ? Image.network(
+                              imageUrl,
+                              fit: BoxFit.cover,
+                              filterQuality: FilterQuality.high,
+                              errorBuilder: (_, __, ___) =>
+                                  _fallback(item.domain),
+                            )
+                          : _fallback(item.domain),
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                Colors.black.withOpacity(0.12),
+                                Colors.black.withOpacity(0.50),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 9,
+                        bottom: 9,
+                        child: _DomainChip(domain: item.domain),
+                      ),
+                      Positioned(
+                        top: 9,
+                        right: 9,
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: added
+                                ? Colors.white.withOpacity(0.92)
+                                : kShelfAccent,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            added ? Icons.check_rounded : Icons.add_rounded,
+                            color: Colors.black,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 11),
+                  child: Text(
+                    item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 12.3,
+                      fontWeight: FontWeight.w800,
+                      height: 1.22,
+                    ),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _searchController,
-              onChanged: _searchAll,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Search anything...',
-                hintStyle: TextStyle(color: Colors.white.withOpacity(0.4)),
-                prefixIcon: const Icon(Icons.search, color: Colors.white),
-                filled: true,
-                fillColor: const Color(0xFF1A1A20),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            SizedBox(
-              height: 420,
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _results.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'Search movies, shows, books, games...',
-                            style: TextStyle(color: Colors.white54),
-                          ),
-                        )
-                      : GridView.builder(
-                          itemCount: _results.length,
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 4,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            childAspectRatio: 0.65,
-                          ),
-                          itemBuilder: (context, index) {
-                            final item = _results[index];
-
-                            final added = widget.existingItemIds
-                                .contains(item['itemId']);
-
-                            return GestureDetector(
-                              onTap: added ? null : () => _addItem(item),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: Image.network(
-                                        item['imageUrl'] ?? '',
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) =>
-                                            Container(
-                                          color: Colors.grey[900],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    item['title'] ?? '',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1045,15 +1433,15 @@ class _EditShelfDialogState extends State<_EditShelfDialog> {
     final compact = MediaQuery.of(context).size.width < 680;
 
     return Dialog(
-      backgroundColor: const Color(0xFF101014),
+      backgroundColor: kShelfBg,
       insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(30),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
+        constraints: const BoxConstraints(maxWidth: 650),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 24, 28, 26),
+          padding: const EdgeInsets.fromLTRB(26, 24, 26, 26),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1071,22 +1459,8 @@ class _EditShelfDialogState extends State<_EditShelfDialog> {
                       ),
                     ),
                     const Spacer(),
-                    InkWell(
+                    _DialogCloseButton(
                       onTap: _saving ? null : () => Navigator.of(context).pop(),
-                      borderRadius: BorderRadius.circular(999),
-                      child: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.08),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.close_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
                     ),
                   ],
                 ),
@@ -1142,9 +1516,8 @@ class _EditShelfDialogState extends State<_EditShelfDialog> {
                   child: ElevatedButton(
                     onPressed: _saving ? null : _save,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFF8B3D),
-                      disabledBackgroundColor:
-                          const Color(0xFFFF8B3D).withOpacity(0.55),
+                      backgroundColor: kShelfAccent,
+                      disabledBackgroundColor: kShelfAccent.withOpacity(0.55),
                       foregroundColor: Colors.black,
                       elevation: 0,
                       shape: RoundedRectangleBorder(
@@ -1180,46 +1553,88 @@ class _EditShelfDialogState extends State<_EditShelfDialog> {
   Widget _EditCoverPicker({required VoidCallback onPick}) {
     return InkWell(
       onTap: _saving ? null : onPick,
-      borderRadius: BorderRadius.circular(24),
-      child: SizedBox(
+      borderRadius: BorderRadius.circular(28),
+      child: Container(
         width: 190,
-        height: 190,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: _newImageBytes != null
-              ? Image.memory(
-                  _newImageBytes!,
-                  fit: BoxFit.cover,
-                  filterQuality: FilterQuality.high,
-                )
-              : widget.currentImageUrl.isNotEmpty
-                  ? Image.network(
-                      widget.currentImageUrl,
+        height: 245,
+        decoration: BoxDecoration(
+          color: const Color(0xFF15151A),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: Colors.white.withOpacity(0.08)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: _newImageBytes != null
+                  ? Image.memory(
+                      _newImageBytes!,
                       fit: BoxFit.cover,
                       filterQuality: FilterQuality.high,
                     )
-                  : Container(
-                      color: const Color(0xFF1B1B21),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.add_photo_alternate_rounded,
-                            color: Colors.white.withOpacity(0.72),
-                            size: 34,
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            'Shelf image',
-                            style: GoogleFonts.inter(
-                              color: Colors.white.withOpacity(0.72),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
+                  : widget.currentImageUrl.isNotEmpty
+                      ? Image.network(
+                          widget.currentImageUrl,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.high,
+                          errorBuilder: (_, __, ___) => _emptyPicker(),
+                        )
+                      : _emptyPicker(),
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.20),
+                      Colors.black.withOpacity(0.70),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 14,
+              right: 14,
+              bottom: 14,
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.add_photo_alternate_rounded,
+                    color: Colors.white,
+                    size: 19,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Change image',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyPicker() {
+    return Container(
+      color: const Color(0xFF15151A),
+      child: Center(
+        child: Icon(
+          Icons.auto_awesome_mosaic_rounded,
+          color: Colors.white.withOpacity(0.30),
+          size: 42,
         ),
       ),
     );
@@ -1300,13 +1715,13 @@ class _InviteCollaboratorDialogState extends State<_InviteCollaboratorDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: const Color(0xFF101014),
+      backgroundColor: kShelfBg,
       insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(30),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 540, maxHeight: 680),
+        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 680),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
           child: Column(
@@ -1314,42 +1729,38 @@ class _InviteCollaboratorDialogState extends State<_InviteCollaboratorDialog> {
               Row(
                 children: [
                   Text(
-                    'Invite collaborator',
+                    'Invite people',
                     style: GoogleFonts.inter(
                       color: Colors.white,
-                      fontSize: 23,
+                      fontSize: 24,
                       fontWeight: FontWeight.w900,
-                      letterSpacing: -0.7,
+                      letterSpacing: -0.8,
                     ),
                   ),
                   const Spacer(),
-                  InkWell(
+                  _DialogCloseButton(
                     onTap: _loading ? null : () => Navigator.of(context).pop(),
-                    borderRadius: BorderRadius.circular(999),
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.close_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Collaborators can edit shelf details and add items.',
+                  style: GoogleFonts.inter(
+                    color: Colors.white.withOpacity(0.45),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
               const SizedBox(height: 18),
               _SearchField(
                 controller: _searchController,
-                hint: 'Search by username',
+                hint: 'Search username...',
                 onChanged: (value) {
-                  setState(() {
-                    _query = value;
-                  });
+                  setState(() => _query = value);
                 },
               ),
               const SizedBox(height: 16),
@@ -1360,13 +1771,15 @@ class _InviteCollaboratorDialogState extends State<_InviteCollaboratorDialog> {
                     if (snapshot.hasError) {
                       return const _ShelfInfoBlock(
                         title: 'Could not search users',
-                        body: 'Make sure usernames are saved consistently.',
+                        body: 'Make sure username is saved as lowercase.',
                       );
                     }
 
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(
-                        child: CircularProgressIndicator(color: Colors.white),
+                        child: CircularProgressIndicator(
+                          color: kShelfAccent,
+                        ),
                       );
                     }
 
@@ -1458,9 +1871,10 @@ class _UserInviteTile extends StatelessWidget {
         child: Row(
           children: [
             CircleAvatar(
-              radius: 22,
+              radius: 23,
               backgroundColor: const Color(0xFF1A1A20),
-              backgroundImage: photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+              backgroundImage:
+                  photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
               child: photoUrl.isEmpty
                   ? Text(
                       name.isNotEmpty ? name[0].toUpperCase() : '?',
@@ -1508,13 +1922,14 @@ class _UserInviteTile extends StatelessWidget {
               decoration: BoxDecoration(
                 color: disabled
                     ? Colors.white.withOpacity(0.08)
-                    : const Color(0xFFFF8B3D),
+                    : kShelfAccent,
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
                 trailingText,
                 style: GoogleFonts.inter(
-                  color: disabled ? Colors.white.withOpacity(0.55) : Colors.black,
+                  color:
+                      disabled ? Colors.white.withOpacity(0.55) : Colors.black,
                   fontSize: 12,
                   fontWeight: FontWeight.w900,
                 ),
@@ -1526,38 +1941,177 @@ class _UserInviteTile extends StatelessWidget {
     );
   }
 }
-class _SoftPill extends StatelessWidget {
+class _RoundIconButton extends StatelessWidget {
   final IconData icon;
-  final String text;
+  final VoidCallback? onTap;
 
-  const _SoftPill({
+  const _RoundIconButton({
     required this.icon,
-    required this.text,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withOpacity(0.07),
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 42,
+          height: 42,
+          child: Icon(icon, color: Colors.white, size: 20),
+        ),
+      ),
+    );
+  }
+}
+
+class _DialogCloseButton extends StatelessWidget {
+  final VoidCallback? onTap;
+
+  const _DialogCloseButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.08),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          Icons.close_rounded,
+          color: Colors.white,
+          size: 20,
+        ),
+      ),
+    );
+  }
+}
+
+class _DomainChip extends StatelessWidget {
+  final String domain;
+
+  const _DomainChip({required this.domain});
+
+  @override
+  Widget build(BuildContext context) {
+    String label = 'Item';
+    IconData icon = Icons.auto_awesome_mosaic_rounded;
+
+    if (domain == 'movies') {
+      label = 'Movie';
+      icon = Icons.movie_rounded;
+    } else if (domain == 'shows') {
+      label = 'Show';
+      icon = Icons.tv_rounded;
+    } else if (domain == 'books') {
+      label = 'Book';
+      icon = Icons.menu_book_rounded;
+    } else if (domain == 'games') {
+      label = 'Game';
+      icon = Icons.sports_esports_rounded;
+    }
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.055),
+        color: Colors.black.withOpacity(0.58),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.07)),
+        border: Border.all(color: Colors.white.withOpacity(0.10)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: Colors.white.withOpacity(0.62)),
-          const SizedBox(width: 6),
+          Icon(icon, color: Colors.white, size: 12),
+          const SizedBox(width: 5),
           Text(
-            text,
+            label,
             style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.68),
-              fontSize: 11.5,
-              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SheetAction extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool destructive;
+  final VoidCallback? onTap;
+
+  const _SheetAction({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.destructive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = destructive ? const Color(0xFFFF6F86) : Colors.white;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(22),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.045),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: Colors.white.withOpacity(0.055)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 21),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.inter(
+                      color: color,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.44),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1579,7 +2133,7 @@ class _SearchField extends StatelessWidget {
     return TextField(
       controller: controller,
       onChanged: onChanged,
-      cursorColor: const Color(0xFFFF8B3D),
+      cursorColor: kShelfAccent,
       style: GoogleFonts.inter(
         color: Colors.white,
         fontSize: 14,
@@ -1597,7 +2151,7 @@ class _SearchField extends StatelessWidget {
           color: Colors.white.withOpacity(0.45),
         ),
         filled: true,
-        fillColor: const Color(0xFF1A1A20),
+        fillColor: const Color(0xFF141419),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 15,
@@ -1645,7 +2199,7 @@ class _ShelfTextField extends StatelessWidget {
         TextField(
           controller: controller,
           maxLines: maxLines,
-          cursorColor: const Color(0xFFFF8B3D),
+          cursorColor: kShelfAccent,
           style: GoogleFonts.inter(
             color: Colors.white,
             fontSize: 14,
@@ -1659,7 +2213,7 @@ class _ShelfTextField extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
             filled: true,
-            fillColor: const Color(0xFF1A1A20),
+            fillColor: const Color(0xFF141419),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 15,
@@ -1678,74 +2232,6 @@ class _ShelfTextField extends StatelessWidget {
     );
   }
 }
-
-class _CircleIconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
-  final bool destructive;
-
-  const _CircleIconButton({
-    required this.icon,
-    required this.onTap,
-    this.destructive = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipOval(
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.075),
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withOpacity(0.075)),
-          ),
-          child: Icon(
-            icon,
-            color: destructive ? const Color(0xFFFF8EA1) : Colors.white,
-            size: 20,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SmallCircleButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _SmallCircleButton({
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        width: 30,
-        height: 30,
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.62),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withOpacity(0.12)),
-        ),
-        child: Icon(
-          icon,
-          color: Colors.white,
-          size: 18,
-        ),
-      ),
-    );
-  }
-}
-
 class _ConfirmDialog extends StatelessWidget {
   final String title;
   final String body;
@@ -1830,7 +2316,7 @@ class _ConfirmDialog extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: destructive
                               ? const Color(0xFFFF4D6D)
-                              : const Color(0xFFFF8B3D),
+                              : kShelfAccent,
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
@@ -1876,7 +2362,7 @@ class _ShelfInfoBlock extends StatelessWidget {
       child: Column(
         children: [
           Icon(
-            Icons.grid_view_rounded,
+            Icons.auto_awesome_mosaic_rounded,
             color: Colors.white.withOpacity(0.28),
             size: 42,
           ),
@@ -1921,7 +2407,7 @@ class _ErrorState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF050507),
+      backgroundColor: kShelfBg,
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(22),
@@ -1957,7 +2443,7 @@ class _ErrorState extends StatelessWidget {
                     vertical: 13,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFF8B3D),
+                    color: kShelfAccent,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
@@ -1976,4 +2462,52 @@ class _ErrorState extends StatelessWidget {
       ),
     );
   }
+}
+
+String _image(String url) {
+  if (url.contains('image.tmdb.org/t/p/w500')) {
+    return url.replaceAll('/w500/', '/original/');
+  }
+
+  if (url.contains('image.tmdb.org/t/p/w780')) {
+    return url.replaceAll('/w780/', '/original/');
+  }
+
+  if (url.contains('http://')) {
+    return url.replaceAll('http://', 'https://');
+  }
+
+  return url;
+}
+
+Widget _fallback(String domain) {
+  IconData icon;
+
+  switch (domain) {
+    case 'movies':
+      icon = Icons.local_movies_outlined;
+      break;
+    case 'shows':
+      icon = Icons.tv_outlined;
+      break;
+    case 'books':
+      icon = Icons.menu_book_outlined;
+      break;
+    case 'games':
+      icon = Icons.sports_esports_outlined;
+      break;
+    default:
+      icon = Icons.image_outlined;
+  }
+
+  return Container(
+    color: Colors.white.withOpacity(0.07),
+    child: Center(
+      child: Icon(
+        icon,
+        color: Colors.white54,
+        size: 30,
+      ),
+    ),
+  );
 }
