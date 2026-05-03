@@ -9,7 +9,14 @@ import '../../../features/items/screens/item_details_screen.dart';
 import '../../../core/services/media_lookup_service.dart';
 
 class AiRecommendationPanel extends StatefulWidget {
-  const AiRecommendationPanel({super.key});
+  const AiRecommendationPanel({
+    super.key,
+    this.discoverySource = 'ai',
+    this.discoveryContext = 'AI recommendation',
+  });
+
+  final String discoverySource;
+  final String discoveryContext;
 
   @override
   State<AiRecommendationPanel> createState() => _AiRecommendationPanelState();
@@ -183,18 +190,23 @@ class _AiRecommendationPanelState extends State<AiRecommendationPanel> {
   }
 
   Future<void> _openRecommendation(RecommendationItem item) async {
-    final mediaItem = await _resolveRecommendationToMediaItem(item);
+  final mediaItem = await _resolveRecommendationToMediaItem(item);
 
-    if (!mounted) return;
+  if (!mounted) return;
 
-    Navigator.of(context).pop();
+  Navigator.of(context).pop();
 
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ItemDetailsScreen(item: mediaItem),
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => ItemDetailsScreen(
+        item: mediaItem.copyWith(
+          discoverySource: widget.discoverySource,
+          discoveryContext: widget.discoveryContext,
+        ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Future<OnboardingMediaItem> _resolveRecommendationToMediaItem(
     RecommendationItem item,

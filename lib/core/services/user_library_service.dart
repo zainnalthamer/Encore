@@ -269,6 +269,8 @@ Future<void> toggleFavorite({
       'source': item.source,
       'description': item.description,
       'apiRating': item.apiRating,
+      'discoverySource': item.discoverySource,
+      'discoveryContext': item.discoveryContext,
     };
   }
 
@@ -284,6 +286,8 @@ Future<void> toggleFavorite({
       'source': item.source,
       'description': item.description,
       'apiRating': item.apiRating,
+      'discoverySource': item.discoverySource,
+      'discoveryContext': item.discoveryContext,
     };
   }
 
@@ -295,6 +299,8 @@ Future<void> toggleFavorite({
       'domain': item.domain,
       'imageUrl': item.imageUrl,
       'source': item.source,
+      'discoverySource': item.discoverySource,
+      'discoveryContext': item.discoveryContext,
     };
   }
 }

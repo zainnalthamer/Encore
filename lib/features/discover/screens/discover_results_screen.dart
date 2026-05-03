@@ -255,7 +255,10 @@ class _DiscoverResultsScreenState extends State<DiscoverResultsScreen> {
                   sliver: SliverGrid(
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
-                        return _DiscoverResultCard(item: items[index]);
+                        return _DiscoverResultCard(
+                          item: items[index],
+                          sectionTitle: widget.title,
+                        );
                       },
                       childCount: items.length,
                     ),
@@ -477,9 +480,11 @@ class _FilterGroup extends StatelessWidget {
 
 class _DiscoverResultCard extends StatelessWidget {
   final OnboardingMediaItem item;
+  final String sectionTitle;
 
   const _DiscoverResultCard({
     required this.item,
+    required this.sectionTitle,
   });
 
   String _image(String url) {
@@ -519,13 +524,18 @@ class _DiscoverResultCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ItemDetailsScreen(item: item),
-          ),
-        );
-      },
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => ItemDetailsScreen(
+        item: item.copyWith(
+          discoverySource: 'see_all',
+          discoveryContext: sectionTitle,
+        ),
+      ),
+    ),
+  );
+},
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: Column(

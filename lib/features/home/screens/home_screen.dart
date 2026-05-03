@@ -602,23 +602,35 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openItemDetails(OnboardingMediaItem item) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ItemDetailsScreen(item: item),
-      ),
-    );
-  }
-
-  void _openSeeAll(String title, List<OnboardingMediaItem> items) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => DiscoverResultsScreen(
-          title: title,
-          items: items,
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => ItemDetailsScreen(
+        item: item.copyWith(
+          discoverySource: 'home',
+          discoveryContext: 'Home recommendation',
         ),
       ),
-    );
-  }
+    ),
+  );
+}
+
+  void _openSeeAll(String title, List<OnboardingMediaItem> items) {
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => DiscoverResultsScreen(
+        title: title,
+        items: items
+            .map(
+              (item) => item.copyWith(
+                discoverySource: 'home_see_all',
+                discoveryContext: title,
+              ),
+            )
+            .toList(),
+      ),
+    ),
+  );
+}
 
   void _openAiPanel() {
     showGeneralDialog(
@@ -630,7 +642,10 @@ class _HomeScreenState extends State<HomeScreen> {
       pageBuilder: (_, __, ___) {
         return const Align(
           alignment: Alignment.centerRight,
-          child: AiRecommendationPanel(),
+          child: AiRecommendationPanel(
+            discoverySource: 'ai',
+            discoveryContext: 'AI panel from Home',
+          ),
         );
       },
       transitionBuilder: (_, animation, __, child) {
@@ -1622,7 +1637,12 @@ class _FriendActivityCardState extends State<_FriendActivityCard> {
       },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => widget.onOpenItem(activity.toItem()),
+        onTap: () => widget.onOpenItem(
+      widget.activity.toItem().copyWith(
+      discoverySource: 'friend',
+      discoveryContext: 'New from friends',
+    ),
+      ),
         child: TweenAnimationBuilder<double>(
           tween: Tween<double>(
             begin: 0,

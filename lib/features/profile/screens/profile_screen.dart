@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:encore/features/analytics/analytics/analytics_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -76,11 +77,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     if (result == 'analytics') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Analytics will be added next.')),
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => const AnalyticsScreen(),
+        ),
       );
-      return;
-    }
+    return;
+  }
 
     if (result == 'logout') {
       await _authService.logout();

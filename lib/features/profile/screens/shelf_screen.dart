@@ -722,12 +722,17 @@ class _ShelfItemCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => ItemDetailsScreen(item: item),
-          ),
-        );
-      },
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => ItemDetailsScreen(
+        item: item.copyWith(
+          discoverySource: 'shelf',
+          discoveryContext: 'Shelf',
+        ),
+      ),
+    ),
+  );
+},
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: Container(

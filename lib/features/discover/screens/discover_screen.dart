@@ -231,16 +231,23 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   }
 
   void _openResults(String title, List<OnboardingMediaItem> items) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => DiscoverResultsScreen(
-          title: title,
-          items: items,
-        ),
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => DiscoverResultsScreen(
+        title: title,
+        items: items
+            .map(
+              (item) => item.copyWith(
+                discoverySource: 'discover_see_all',
+                discoveryContext: title,
+              ),
+            )
+            .toList(),
       ),
-    );
-  }
+    ),
+  );
+}
 
   void _openAiPanel() {
     showGeneralDialog(
@@ -252,7 +259,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       pageBuilder: (_, __, ___) {
         return const Align(
           alignment: Alignment.centerRight,
-          child: AiRecommendationPanel(),
+          child: AiRecommendationPanel(
+            discoverySource: 'ai',
+            discoveryContext: 'AI panel from Discover',
+          ),
         );
       },
       transitionBuilder: (_, animation, __, child) {
@@ -1306,7 +1316,7 @@ class _FeaturedCard extends StatelessWidget {
             Image.network(
               imageUrl,
               fit: BoxFit.cover,
-              alignment: Alignment.center,
+              alignment: Alignment.topCenter,
               filterQuality: FilterQuality.high,
               errorBuilder: (_, __, ___) => _fallback(item.domain),
             ),
@@ -1911,7 +1921,12 @@ void _openItem(BuildContext context, OnboardingMediaItem item) {
   Navigator.push(
     context,
     MaterialPageRoute(
-      builder: (_) => ItemDetailsScreen(item: item),
+      builder: (_) => ItemDetailsScreen(
+        item: item.copyWith(
+          discoverySource: 'discover',
+          discoveryContext: 'Discover page',
+        ),
+      ),
     ),
   );
 }
