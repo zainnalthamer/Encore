@@ -1,9 +1,12 @@
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/models/onboarding_media_item.dart';
 import '../../../core/services/auth_service.dart';
@@ -111,12 +114,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return _FavoritesSection(profileUid: profileUid);
 
       case 'Shelves':
-        return const _SectionSurface(
-          child: _LargeInfoBlock(
-            title: 'Shelves will live here',
-            body:
-                'Create custom collections for moods, franchises, genres, or personal themes later.',
-          ),
+        return _ShelvesSection(
+          profileUid: profileUid,
+          isOwnProfile: isOwnProfile,
         );
 
       case 'Activity':
@@ -132,7 +132,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   List<String> _safeStringList(dynamic value) {
     if (value is List) {
-      return value.map((e) => e.toString()).where((e) => e.trim().isNotEmpty).toList();
+      return value
+          .map((e) => e.toString())
+          .where((e) => e.trim().isNotEmpty)
+          .toList();
     }
 
     return <String>[];
@@ -419,7 +422,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           const SizedBox(height: 34),
                           ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 980),
+                            constraints: const BoxConstraints(maxWidth: 1080),
                             child: Column(
                               children: [
                                 Row(
@@ -509,6 +512,654 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
+class _ShelvesSection extends StatelessWidget {
+  final String profileUid;
+  final bool isOwnProfile;
+
+  const _ShelvesSection({
+    required this.profileUid,
+    required this.isOwnProfile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = FirebaseFirestore.instance
+        .collection('users')
+        .doc(profileUid)
+        .collection('shelves')
+        .orderBy('updatedAt', descending: true);
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: ref.snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return const _SectionSurface(
+                child: _LargeInfoBlock(
+                  title: 'Could not load shelves',
+                  body: 'Check Firestore rules or shelf data.',
+                ),
+              );
+            }
+
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              );
+            }
+
+            final docs = snapshot.data?.docs ?? [];
+
+            if (docs.isEmpty) {
+              return const _SectionSurface(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 42),
+                  child: _LargeInfoBlock(
+                    title: 'No shelves yet',
+                    body: 'Create collections for movies, shows, books, and games.',
+                  ),
+                ),
+              );
+            }
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 86),
+              child: _ShelvesGrid(
+                docs: docs,
+                isOwnProfile: isOwnProfile,
+              ),
+            );
+          },
+        ),
+        if (isOwnProfile)
+          Positioned(
+            right: 10,
+            bottom: 10,
+            child: FloatingActionButton(
+              backgroundColor: const Color(0xFFFF8B3D),
+              foregroundColor: Colors.black,
+              elevation: 10,
+              shape: const CircleBorder(),
+              onPressed: () => _showCreateShelfPopup(context, profileUid),
+              child: const Icon(Icons.add_rounded, size: 32),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ShelvesGrid extends StatelessWidget {
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+  final bool isOwnProfile;
+
+  const _ShelvesGrid({
+    required this.docs,
+    required this.isOwnProfile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+
+        final count = width >= 1100
+            ? 5
+            : width >= 900
+                ? 4
+                : width >= 650
+                    ? 3
+                    : 2;
+
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: docs.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: count,
+            crossAxisSpacing: 20,
+            mainAxisSpacing: 30,
+            childAspectRatio: 0.68,
+          ),
+          itemBuilder: (context, index) {
+            return _ShelfBoardCard(
+              shelfId: docs[index].id,
+              data: docs[index].data(),
+              isOwnProfile: isOwnProfile,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ShelfBoardCard extends StatelessWidget {
+  final String shelfId;
+  final Map<String, dynamic> data;
+  final bool isOwnProfile;
+
+  const _ShelfBoardCard({
+    required this.shelfId,
+    required this.data,
+    required this.isOwnProfile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (data['name'] ?? 'Untitled shelf').toString();
+    final description = (data['description'] ?? '').toString().trim();
+    final imageUrl = (data['imageUrl'] ?? '').toString().trim();
+    final itemsCountRaw = data['itemsCount'];
+    final itemsCount = itemsCountRaw is num ? itemsCountRaw.toInt() : 0;
+
+    return GestureDetector(
+      onTap: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Shelf screen will be added next.')),
+        );
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 1,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(22),
+                child: imageUrl.isNotEmpty
+                    ? Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        filterQuality: FilterQuality.high,
+                        errorBuilder: (_, __, ___) => _shelfFallback(),
+                      )
+                    : _shelfFallback(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+                height: 1.1,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '$itemsCount ${itemsCount == 1 ? 'item' : 'items'}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                color: Colors.white.withOpacity(0.48),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (description.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                description,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: Colors.white.withOpacity(0.44),
+                  fontSize: 12,
+                  height: 1.25,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _shelfFallback() {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF18181D),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.grid_view_rounded,
+          color: Colors.white.withOpacity(0.28),
+          size: 36,
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _showCreateShelfPopup(
+  BuildContext context,
+  String profileUid,
+) async {
+  await showDialog(
+    context: context,
+    barrierColor: Colors.black.withOpacity(0.78),
+    builder: (_) => _CreateShelfDialog(profileUid: profileUid),
+  );
+}
+
+class _CreateShelfDialog extends StatefulWidget {
+  final String profileUid;
+
+  const _CreateShelfDialog({
+    required this.profileUid,
+  });
+
+  @override
+  State<_CreateShelfDialog> createState() => _CreateShelfDialogState();
+}
+
+class _CreateShelfDialogState extends State<_CreateShelfDialog> {
+  final _nameController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final ImagePicker _picker = ImagePicker();
+
+  Uint8List? _selectedImageBytes;
+  String? _selectedImageName;
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickShelfImage() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 82,
+    );
+
+    if (picked == null) return;
+
+    final bytes = await picked.readAsBytes();
+
+    if (!mounted) return;
+
+    setState(() {
+      _selectedImageBytes = bytes;
+      _selectedImageName = picked.name;
+    });
+  }
+
+  Future<String> _uploadShelfImageAfterCreate(String shelfId) async {
+  if (_selectedImageBytes == null) return '';
+
+  final safeFileName =
+      (_selectedImageName == null || _selectedImageName!.trim().isEmpty)
+          ? 'cover.jpg'
+          : _selectedImageName!.replaceAll(' ', '_');
+
+  final ref = FirebaseStorage.instance
+      .ref()
+      .child('shelves')
+      .child(widget.profileUid)
+      .child(shelfId)
+      .child(safeFileName);
+
+  await ref.putData(
+    _selectedImageBytes!,
+    SettableMetadata(contentType: 'image/jpeg'),
+  );
+
+  return ref.getDownloadURL();
+}
+
+  // Future<String> _tryUploadShelfImage(String shelfId) async {
+  //   if (_selectedImageBytes == null) return '';
+
+  //   try {
+  //     final safeFileName =
+  //         (_selectedImageName == null || _selectedImageName!.trim().isEmpty)
+  //             ? 'cover.jpg'
+  //             : _selectedImageName!.replaceAll(' ', '_');
+
+  //     final ref = FirebaseStorage.instance
+  //         .ref()
+  //         .child('shelves')
+  //         .child(widget.profileUid)
+  //         .child(shelfId)
+  //         .child(safeFileName);
+
+  //     await ref.putData(
+  //       _selectedImageBytes!,
+  //       SettableMetadata(contentType: 'image/jpeg'),
+  //     );
+
+  //     return await ref.getDownloadURL();
+  //   } catch (_) {
+  //     return '';
+  //   }
+  // }
+
+  Future<void> _createShelf() async {
+  final name = _nameController.text.trim();
+  final description = _descriptionController.text.trim();
+  final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+  if (name.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Shelf name is required.')),
+    );
+    return;
+  }
+
+  if (currentUid == null || currentUid != widget.profileUid) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('You can only create shelves on your profile.')),
+    );
+    return;
+  }
+
+  setState(() => _saving = true);
+
+  final shelfRef = FirebaseFirestore.instance
+      .collection('users')
+      .doc(widget.profileUid)
+      .collection('shelves')
+      .doc();
+
+  try {
+    await shelfRef.set({
+      'name': name,
+      'description': description,
+      'imageUrl': '',
+      'imageSource': 'empty',
+      'itemIds': <String>[],
+      'itemsCount': 0,
+      'ownerId': widget.profileUid,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    if (_selectedImageBytes != null) {
+      try {
+        final imageUrl = await _uploadShelfImageAfterCreate(shelfRef.id)
+            .timeout(const Duration(seconds: 12));
+
+        if (imageUrl.isNotEmpty) {
+          await shelfRef.update({
+            'imageUrl': imageUrl,
+            'imageSource': 'uploaded',
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pop();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Shelf created.')),
+    );
+  } catch (e) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Could not create shelf: $e')),
+    );
+  } finally {
+    if (mounted) setState(() => _saving = false);
+  }
+}
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = MediaQuery.of(context).size.width < 680;
+
+    return Dialog(
+      backgroundColor: const Color(0xFF101014),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 620),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(28, 24, 28, 26),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Create shelf',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.9,
+                      ),
+                    ),
+                    const Spacer(),
+                    InkWell(
+                      onTap: _saving ? null : () => Navigator.of(context).pop(),
+                      borderRadius: BorderRadius.circular(999),
+                      child: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.08),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 26),
+                compact
+                    ? Column(
+                        children: [
+                          Center(child: _ShelfCoverPicker()),
+                          const SizedBox(height: 22),
+                          _MinimalShelfField(
+                            controller: _nameController,
+                            label: 'Name',
+                            hint: 'comfort rotation',
+                          ),
+                          const SizedBox(height: 14),
+                          _MinimalShelfField(
+                            controller: _descriptionController,
+                            label: 'Description',
+                            hint: 'The safe picks I always come back to',
+                            maxLines: 4,
+                          ),
+                        ],
+                      )
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _ShelfCoverPicker(),
+                          const SizedBox(width: 24),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                _MinimalShelfField(
+                                  controller: _nameController,
+                                  label: 'Name',
+                                  hint: 'comfort rotation',
+                                ),
+                                const SizedBox(height: 14),
+                                _MinimalShelfField(
+                                  controller: _descriptionController,
+                                  label: 'Description',
+                                  hint: 'The safe picks I always come back to',
+                                  maxLines: 4,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                const SizedBox(height: 26),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _saving ? null : _createShelf,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF8B3D),
+                      disabledBackgroundColor:
+                          const Color(0xFFFF8B3D).withOpacity(0.55),
+                      foregroundColor: Colors.black,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    child: _saving
+                        ? const SizedBox(
+                            width: 19,
+                            height: 19,
+                            child: CircularProgressIndicator(
+                              color: Colors.black,
+                              strokeWidth: 2.2,
+                            ),
+                          )
+                        : Text(
+                            'Create shelf',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _ShelfCoverPicker() {
+    return InkWell(
+      onTap: _saving ? null : _pickShelfImage,
+      borderRadius: BorderRadius.circular(24),
+      child: SizedBox(
+        width: 210,
+        height: 210,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: _selectedImageBytes != null
+              ? Image.memory(
+                  _selectedImageBytes!,
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.high,
+                )
+              : Container(
+                  color: const Color(0xFF1B1B21),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.add_photo_alternate_rounded,
+                        color: Colors.white.withOpacity(0.72),
+                        size: 34,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Add cover',
+                        style: GoogleFonts.inter(
+                          color: Colors.white.withOpacity(0.72),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MinimalShelfField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final String hint;
+  final int maxLines;
+
+  const _MinimalShelfField({
+    required this.controller,
+    required this.label,
+    required this.hint,
+    this.maxLines = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            color: Colors.white.withOpacity(0.65),
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          maxLines: maxLines,
+          cursorColor: const Color(0xFFFF8B3D),
+          style: GoogleFonts.inter(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: GoogleFonts.inter(
+              color: Colors.white.withOpacity(0.30),
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+            ),
+            filled: true,
+            fillColor: const Color(0xFF1A1A20),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 15,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.white.withOpacity(0.06)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.white.withOpacity(0.20)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
 class _FollowButton extends StatefulWidget {
   final String targetUid;
   final String currentUid;
@@ -753,7 +1404,6 @@ class _CountTextBlock extends StatelessWidget {
     );
   }
 }
-
 class _FavoritesSection extends StatelessWidget {
   final String profileUid;
 
@@ -907,7 +1557,6 @@ class _ActivitySection extends StatelessWidget {
     );
   }
 }
-
 class _LibraryItemsGrid extends StatelessWidget {
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
 
@@ -991,19 +1640,55 @@ class _LibraryItemCard extends StatelessWidget {
     }
   }
 
+  String _domainLabel(String domain) {
+    switch (domain) {
+      case 'movies':
+        return 'Movie';
+      case 'shows':
+        return 'Show';
+      case 'books':
+        return 'Book';
+      case 'games':
+        return 'Game';
+      default:
+        return 'Item';
+    }
+  }
+
+  IconData _domainIcon(String domain) {
+    switch (domain) {
+      case 'movies':
+        return Icons.local_movies_rounded;
+      case 'shows':
+        return Icons.tv_rounded;
+      case 'books':
+        return Icons.menu_book_rounded;
+      case 'games':
+        return Icons.sports_esports_rounded;
+      default:
+        return Icons.auto_awesome_rounded;
+    }
+  }
+
+  double _parseRating(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  }
+
   @override
   Widget build(BuildContext context) {
     final item = _toItem();
 
-    final ratingRaw = data['userRating'];
-    final rating = ratingRaw is num ? ratingRaw.toDouble() : 0.0;
+    final rating = _parseRating(
+      data['userRating'] ?? data['rating'] ?? data['latestRating'],
+    );
 
-    final review = (data['review'] ?? data['lastReview'] ?? '')
-        .toString()
-        .trim();
+    final review =
+        (data['review'] ?? data['lastReview'] ?? data['latestReview'] ?? '')
+            .toString()
+            .trim();
 
-    final status =
-        (data['status'] ?? _defaultStatus(item.domain)).toString();
+    final status = (data['status'] ?? _defaultStatus(item.domain)).toString();
 
     return GestureDetector(
       onTap: () {
@@ -1021,17 +1706,66 @@ class _LibraryItemCard extends StatelessWidget {
           children: [
             Expanded(
               flex: 72,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(17),
-                child: item.imageUrl.trim().isNotEmpty
-                    ? Image.network(
-                        item.imageUrl,
-                        width: double.infinity,
-                        height: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _posterFallback(),
-                      )
-                    : _posterFallback(),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(17),
+                      child: item.imageUrl.trim().isNotEmpty
+                          ? Image.network(
+                              item.imageUrl,
+                              width: double.infinity,
+                              height: double.infinity,
+                              fit: BoxFit.cover,
+                              filterQuality: FilterQuality.high,
+                              errorBuilder: (_, __, ___) => _posterFallback(),
+                            )
+                          : _posterFallback(),
+                    ),
+                  ),
+                  Positioned(
+                    left: 9,
+                    top: 9,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 9,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.42),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.08),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _domainIcon(item.domain),
+                                color: Colors.white,
+                                size: 13,
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                _domainLabel(item.domain),
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 10),
@@ -1048,39 +1782,20 @@ class _LibraryItemCard extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(
-                  Icons.star_rounded,
-                  color: Color(0xFFFF8B3D),
-                  size: 15,
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    rating <= 0
-                        ? 'No rating'
-                        : '${rating.toStringAsFixed(1)} / 5',
-                    style: GoogleFonts.inter(
-                      color: Colors.white.withOpacity(0.75),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 7),
+            _MiniStars(rating: rating),
+            const SizedBox(height: 7),
             Text(
               status,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: GoogleFonts.inter(
                 color: const Color(0xFFFF8B3D),
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 7),
             SizedBox(
               height: 44,
               child: Text(
@@ -1114,6 +1829,61 @@ class _LibraryItemCard extends StatelessWidget {
   }
 }
 
+class _MiniStars extends StatelessWidget {
+  final double rating;
+
+  const _MiniStars({
+    required this.rating,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (rating <= 0) {
+      return Row(
+        children: [
+          Icon(
+            Icons.star_border_rounded,
+            color: Colors.white.withOpacity(0.42),
+            size: 15,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            'No rating',
+            style: GoogleFonts.inter(
+              color: Colors.white.withOpacity(0.50),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        for (int i = 1; i <= 5; i++)
+          Icon(
+            rating >= i
+                ? Icons.star_rounded
+                : rating >= i - 0.5
+                    ? Icons.star_half_rounded
+                    : Icons.star_border_rounded,
+            color: const Color(0xFFFF8B3D),
+            size: 15,
+          ),
+        const SizedBox(width: 6),
+        Text(
+          rating.toStringAsFixed(1),
+          style: GoogleFonts.inter(
+            color: Colors.white.withOpacity(0.74),
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+}
 class _ActivityCard extends StatelessWidget {
   final Map<String, dynamic> data;
 
@@ -1121,17 +1891,38 @@ class _ActivityCard extends StatelessWidget {
     required this.data,
   });
 
+  double _parseRating(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  }
+
+  String _activityLabel(String type) {
+    switch (type) {
+      case 'favorite':
+      case 'favorited':
+        return 'Favorited';
+      case 'saved':
+      case 'save':
+        return 'Saved';
+      case 'review':
+      case 'reviewed':
+        return 'Reviewed';
+      case 'rating':
+      case 'rated':
+        return 'Rated';
+      default:
+        return 'Updated';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = (data['title'] ?? 'Untitled').toString();
     final imageUrl = (data['imageUrl'] ?? '').toString();
-    final type =
-        (data['activityType'] ?? data['type'] ?? 'updated').toString();
+    final type = (data['activityType'] ?? data['type'] ?? 'updated').toString();
 
-    final ratingRaw = data['userRating'] ?? data['rating'];
-    final rating = ratingRaw is num ? ratingRaw.toDouble() : 0.0;
-
-    final review = (data['review'] ?? data['text'] ?? '').toString();
+    final rating = _parseRating(data['userRating'] ?? data['rating']);
+    final review = (data['review'] ?? data['text'] ?? '').toString().trim();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1151,8 +1942,8 @@ class _ActivityCard extends StatelessWidget {
                     width: 52,
                     height: 72,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        _activityImageFallback(),
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (_, __, ___) => _activityImageFallback(),
                   )
                 : _activityImageFallback(),
           ),
@@ -1162,7 +1953,7 @@ class _ActivityCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  type.toUpperCase(),
+                  _activityLabel(type).toUpperCase(),
                   style: GoogleFonts.inter(
                     color: const Color(0xFFFF8B3D),
                     fontSize: 10,
@@ -1179,15 +1970,12 @@ class _ActivityCard extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                if (rating > 0)
-                  Text(
-                    'Rated ${rating.toStringAsFixed(1)} / 5',
-                    style: GoogleFonts.inter(
-                      color: Colors.white.withOpacity(0.6),
-                      fontSize: 12,
-                    ),
-                  ),
-                if (review.isNotEmpty)
+                if (rating > 0) ...[
+                  const SizedBox(height: 5),
+                  _MiniStars(rating: rating),
+                ],
+                if (review.isNotEmpty) ...[
+                  const SizedBox(height: 5),
                   Text(
                     review,
                     maxLines: 2,
@@ -1195,8 +1983,10 @@ class _ActivityCard extends StatelessWidget {
                     style: GoogleFonts.inter(
                       color: Colors.white.withOpacity(0.5),
                       fontSize: 12,
+                      height: 1.35,
                     ),
                   ),
+                ],
               ],
             ),
           ),
@@ -1218,7 +2008,9 @@ class _ActivityCard extends StatelessWidget {
 class _SectionSurface extends StatelessWidget {
   final Widget child;
 
-  const _SectionSurface({required this.child});
+  const _SectionSurface({
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1269,6 +2061,7 @@ class _LargeInfoBlock extends StatelessWidget {
           style: GoogleFonts.inter(
             color: Colors.white.withOpacity(0.6),
             fontSize: 13,
+            height: 1.45,
           ),
         ),
       ],

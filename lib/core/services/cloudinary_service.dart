@@ -57,4 +57,11 @@ class CloudinaryService {
     final data = jsonDecode(body) as Map<String, dynamic>;
     return data["secure_url"] as String;
   }
+
+  Future<String> uploadShelfImage(XFile file) async {
+  return _uploadImage(
+    file: file,
+    folder: 'shelves',
+  );
+}
 }
