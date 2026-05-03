@@ -219,6 +219,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
           final collaboratorIds = ((shelf['collaboratorIds'] as List?) ?? [])
               .map((e) => e.toString())
               .toList();
+
           final itemCount = (shelf['itemsCount'] ?? 0) is num
               ? (shelf['itemsCount'] as num).toInt()
               : 0;
@@ -457,7 +458,8 @@ class _ShelfHeader extends StatelessWidget {
                   ),
                   _ShelfMetric(
                     icon: Icons.people_alt_rounded,
-                    text: '$peopleCount ${peopleCount == 1 ? 'person' : 'people'}',
+                    text:
+                        '$peopleCount ${peopleCount == 1 ? 'person' : 'people'}',
                   ),
                   _ShelfMetric(
                     icon: Icons.lock_open_rounded,
@@ -1034,11 +1036,13 @@ class _AddShelfItemsDialogState extends State<_AddShelfItemsDialog> {
     final data = doc.data() ?? {};
 
     return {
-      'name': (data['displayName'] ?? data['name'] ?? user.displayName ?? 'Someone')
-          .toString(),
+      'name':
+          (data['displayName'] ?? data['name'] ?? user.displayName ?? 'Someone')
+              .toString(),
       'username': (data['username'] ?? '').toString(),
-      'avatar': (data['photoUrl'] ?? data['avatarUrl'] ?? user.photoURL ?? '')
-          .toString(),
+      'avatar':
+          (data['photoUrl'] ?? data['avatarUrl'] ?? user.photoURL ?? '')
+              .toString(),
     };
   }
 
@@ -1183,8 +1187,8 @@ class _AddShelfItemsDialogState extends State<_AddShelfItemsDialog> {
                                     ),
                                     itemBuilder: (context, index) {
                                       final item = _results[index];
-                                      final added =
-                                          widget.existingItemIds.contains(item.id);
+                                      final added = widget.existingItemIds
+                                          .contains(item.id);
 
                                       return _AddItemResultCard(
                                         item: item,
@@ -1227,9 +1231,8 @@ class _AddItemResultCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: MouseRegion(
-        cursor: added || loading
-            ? SystemMouseCursors.basic
-            : SystemMouseCursors.click,
+        cursor:
+            added || loading ? SystemMouseCursors.basic : SystemMouseCursors.click,
         child: Opacity(
           opacity: added ? 0.48 : 1,
           child: Container(
@@ -1404,6 +1407,7 @@ class _EditShelfDialogState extends State<_EditShelfDialog> {
 
       await widget.shelfRef.update({
         'name': name,
+        'searchName': name.trim().toLowerCase(),
         'description': description,
         'imageUrl': imageUrl,
         'imageSource': imageUrl.isEmpty ? 'empty' : 'cloudinary',
@@ -1427,8 +1431,7 @@ class _EditShelfDialogState extends State<_EditShelfDialog> {
       if (mounted) setState(() => _saving = false);
     }
   }
-
-  @override
+    @override
   Widget build(BuildContext context) {
     final compact = MediaQuery.of(context).size.width < 680;
 
@@ -1711,8 +1714,7 @@ class _InviteCollaboratorDialogState extends State<_InviteCollaboratorDialog> {
         .endAt(['$q\uf8ff'])
         .limit(20);
   }
-
-  @override
+    @override
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: kShelfBg,
@@ -1920,9 +1922,7 @@ class _UserInviteTile extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
               decoration: BoxDecoration(
-                color: disabled
-                    ? Colors.white.withOpacity(0.08)
-                    : kShelfAccent,
+                color: disabled ? Colors.white.withOpacity(0.08) : kShelfAccent,
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
@@ -2116,7 +2116,6 @@ class _SheetAction extends StatelessWidget {
     );
   }
 }
-
 class _SearchField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;

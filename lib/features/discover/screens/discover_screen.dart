@@ -9,6 +9,7 @@ import '../../../core/services/discover_api_service.dart';
 import '../../../core/services/social_service.dart';
 import '../../items/screens/item_details_screen.dart';
 import '../../profile/screens/profile_screen.dart';
+import '../../profile/screens/shelf_screen.dart';
 import 'discover_results_screen.dart';
 
 const Color kDiscoverBg = Color(0xFF050507);
@@ -29,13 +30,17 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   late Future<DiscoverData> _future;
 
   Timer? _debounce;
+
   bool _searching = false;
+  bool _loadingDirectory = false;
+
   String _query = '';
   String _selectedType = 'items';
   String _selectedDomain = 'all';
 
   List<OnboardingMediaItem> _searchResults = [];
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _userResults = [];
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _shelfResults = [];
 
   final List<String> _types = const ['items', 'users', 'shelves'];
   final List<String> _domains = const [
@@ -59,6 +64,97 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     super.dispose();
   }
 
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _loadAllUsers() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .limit(60)
+        .get();
+
+    return snapshot.docs;
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _searchUsers(
+    String query,
+  ) async {
+    final q = query.trim().toLowerCase();
+
+    if (q.isEmpty) {
+      return _loadAllUsers();
+    }
+
+    final users = await _socialService.searchUsers(q);
+    return users;
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _loadAllShelves() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collectionGroup('shelves')
+        .limit(60)
+        .get();
+
+    return snapshot.docs;
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _searchShelves(
+    String query,
+  ) async {
+    final q = query.trim().toLowerCase();
+
+    if (q.isEmpty) {
+      return _loadAllShelves();
+    }
+
+    final snapshot = await FirebaseFirestore.instance
+        .collectionGroup('shelves')
+        .orderBy('searchName')
+        .startAt([q])
+        .endAt(['$q\uf8ff'])
+        .limit(60)
+        .get();
+
+    return snapshot.docs;
+  }
+
+  Future<void> _loadDirectoryForSelectedType() async {
+    if (_selectedType != 'users' && _selectedType != 'shelves') return;
+
+    setState(() {
+      _loadingDirectory = true;
+      _searching = false;
+      _searchResults = [];
+      _userResults = [];
+      _shelfResults = [];
+    });
+
+    try {
+      if (_selectedType == 'users') {
+        final users = await _loadAllUsers();
+
+        if (!mounted) return;
+
+        setState(() {
+          _userResults = users;
+          _shelfResults = [];
+          _searchResults = [];
+        });
+      } else if (_selectedType == 'shelves') {
+        final shelves = await _loadAllShelves();
+
+        if (!mounted) return;
+
+        setState(() {
+          _shelfResults = shelves;
+          _userResults = [];
+          _searchResults = [];
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loadingDirectory = false);
+      }
+    }
+  }
+
   Future<void> _runSearch(String value) async {
     final clean = value.trim();
 
@@ -67,27 +163,16 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     _debounce?.cancel();
 
     _debounce = Timer(const Duration(milliseconds: 450), () async {
-      if (clean.isEmpty) {
-        if (!mounted) return;
-
-        setState(() {
-          _searching = false;
-          _searchResults = [];
-          _userResults = [];
-        });
-
-        return;
-      }
-
-      setState(() => _searching = true);
-
       if (_selectedType == 'users') {
-        final users = await _socialService.searchUsers(clean);
+        setState(() => _searching = true);
+
+        final users = await _searchUsers(clean);
 
         if (!mounted) return;
 
         setState(() {
           _userResults = users;
+          _shelfResults = [];
           _searchResults = [];
           _searching = false;
         });
@@ -96,16 +181,36 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       }
 
       if (_selectedType == 'shelves') {
+        setState(() => _searching = true);
+
+        final shelves = await _searchShelves(clean);
+
+        if (!mounted) return;
+
+        setState(() {
+          _shelfResults = shelves;
+          _userResults = [];
+          _searchResults = [];
+          _searching = false;
+        });
+
+        return;
+      }
+
+      if (clean.isEmpty) {
         if (!mounted) return;
 
         setState(() {
           _searching = false;
           _searchResults = [];
           _userResults = [];
+          _shelfResults = [];
         });
 
         return;
       }
+
+      setState(() => _searching = true);
 
       final results = await _service.searchAll(clean);
 
@@ -116,12 +221,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             ? results
             : results.where((item) => item.domain == _selectedDomain).toList();
         _userResults = [];
+        _shelfResults = [];
         _searching = false;
       });
     });
   }
-
-  void _openResults(String title, List<OnboardingMediaItem> items) {
+    void _openResults(String title, List<OnboardingMediaItem> items) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -185,29 +290,38 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                           _selectedType = value;
                           _searchResults = [];
                           _userResults = [];
+                          _shelfResults = [];
                         });
 
-                        if (_query.trim().isNotEmpty) {
+                        Navigator.pop(context);
+
+                        if (value == 'users' || value == 'shelves') {
+                          _loadDirectoryForSelectedType();
+                        } else if (_query.trim().isNotEmpty) {
                           _runSearch(_query);
                         }
                       },
                     ),
-                    const SizedBox(height: 22),
-                    _FilterGroup(
-                      title: 'Domain',
-                      options: _domains,
-                      selected: _selectedDomain,
-                      label: _domainLabelForFilter,
-                      onSelected: (value) {
-                        modalSetState(() => _selectedDomain = value);
+                    if (_selectedType == 'items') ...[
+                      const SizedBox(height: 22),
+                      _FilterGroup(
+                        title: 'Domain',
+                        options: _domains,
+                        selected: _selectedDomain,
+                        label: _domainLabelForFilter,
+                        onSelected: (value) {
+                          modalSetState(() => _selectedDomain = value);
 
-                        setState(() => _selectedDomain = value);
+                          setState(() => _selectedDomain = value);
 
-                        if (_query.trim().isNotEmpty) {
-                          _runSearch(_query);
-                        }
-                      },
-                    ),
+                          Navigator.pop(context);
+
+                          if (_query.trim().isNotEmpty) {
+                            _runSearch(_query);
+                          }
+                        },
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -239,7 +353,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       case 'users':
         return 'Users';
       case 'shelves':
-        return 'Shelves soon';
+        return 'Shelves';
       default:
         return type;
     }
@@ -265,6 +379,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   @override
   Widget build(BuildContext context) {
     final hasSearch = _query.trim().isNotEmpty;
+    final directoryMode = _selectedType == 'users' || _selectedType == 'shelves';
 
     return Scaffold(
       backgroundColor: kDiscoverBg,
@@ -283,23 +398,27 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       child: _SearchHeader(
                         controller: _searchController,
                         selectedType: _selectedType,
+                        selectedDomain: _selectedDomain,
                         onChanged: _runSearch,
                         onFilter: _showFilterSheet,
                       ),
                     ),
                   ),
                   const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                  if (hasSearch)
-                    SliverPadding(
+                  if (hasSearch || directoryMode)
+                    SliverToBoxAdapter(
+                      child: Padding(
                       padding: const EdgeInsets.fromLTRB(22, 0, 22, 120),
-                      sliver: _SearchResultsSliver(
-                        searching: _searching,
+                      child: _SearchResultsBody(
+                        searching: _searching || _loadingDirectory,
                         query: _query,
                         selectedType: _selectedType,
                         items: _searchResults,
                         users: _userResults,
+                        shelves: _shelfResults,
                       ),
-                    )
+                  ),
+                )
                   else if (snapshot.connectionState == ConnectionState.waiting)
                     const SliverFillRemaining(
                       child: Center(
@@ -493,12 +612,14 @@ class _NavText extends StatelessWidget {
 class _SearchHeader extends StatelessWidget {
   final TextEditingController controller;
   final String selectedType;
+  final String selectedDomain;
   final ValueChanged<String> onChanged;
   final VoidCallback onFilter;
 
   const _SearchHeader({
     required this.controller,
     required this.selectedType,
+    required this.selectedDomain,
     required this.onChanged,
     required this.onFilter,
   });
@@ -508,165 +629,234 @@ class _SearchHeader extends StatelessWidget {
     final hint = selectedType == 'users'
         ? 'Search users by username...'
         : selectedType == 'shelves'
-            ? 'Search shelves...'
+            ? 'Search shelves by name...'
             : 'Search movies, shows, books, games...';
 
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Container(
-            height: 58,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.055),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white.withOpacity(0.08)),
-            ),
-            child: TextField(
-              controller: controller,
-              onChanged: onChanged,
-              cursorColor: Colors.white,
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-              ),
-              decoration: InputDecoration(
-                prefixIcon: Icon(
-                  Icons.search_rounded,
-                  color: Colors.white.withOpacity(0.42),
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                height: 58,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.055),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.white.withOpacity(0.08)),
                 ),
-                hintText: hint,
-                hintStyle: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.32),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                child: TextField(
+                  controller: controller,
+                  onChanged: onChanged,
+                  cursorColor: Colors.white,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  decoration: InputDecoration(
+                    prefixIcon: Icon(
+                      Icons.search_rounded,
+                      color: Colors.white.withOpacity(0.42),
+                    ),
+                    hintText: hint,
+                    hintStyle: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.32),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 18),
+                  ),
                 ),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 18),
               ),
             ),
-          ),
+            const SizedBox(width: 12),
+            GestureDetector(
+              onTap: onFilter,
+              child: Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.065),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withOpacity(0.08)),
+                ),
+                child: const Icon(
+                  Icons.tune_rounded,
+                  color: Colors.white,
+                  size: 23,
+                ),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        GestureDetector(
-          onTap: onFilter,
-          child: Container(
-            width: 58,
-            height: 58,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.065),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withOpacity(0.08)),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 9,
+          runSpacing: 9,
+          children: [
+            _SmallFilterPill(
+              text: selectedType == 'items'
+                  ? 'Items'
+                  : selectedType == 'users'
+                      ? 'Users'
+                      : 'Shelves',
+              active: true,
             ),
-            child: const Icon(
-              Icons.tune_rounded,
-              color: Colors.white,
-              size: 23,
-            ),
-          ),
+            if (selectedType == 'items')
+              _SmallFilterPill(
+                text: selectedDomain == 'all'
+                    ? 'All domains'
+                    : selectedDomain[0].toUpperCase() +
+                        selectedDomain.substring(1),
+                active: false,
+              ),
+          ],
         ),
       ],
     );
   }
 }
 
-class _SearchResultsSliver extends StatelessWidget {
+class _SmallFilterPill extends StatelessWidget {
+  final String text;
+  final bool active;
+
+  const _SmallFilterPill({
+    required this.text,
+    required this.active,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: BoxDecoration(
+        color: active ? kDiscoverAccent : Colors.white.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: GoogleFonts.inter(
+          color: active ? Colors.black : Colors.white.withOpacity(0.72),
+          fontSize: 11.5,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchResultsBody extends StatelessWidget {
   final bool searching;
   final String query;
   final String selectedType;
   final List<OnboardingMediaItem> items;
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> users;
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> shelves;
 
-  const _SearchResultsSliver({
+  const _SearchResultsBody({
     required this.searching,
     required this.query,
     required this.selectedType,
     required this.items,
     required this.users,
+    required this.shelves,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (selectedType == 'users') {
-      if (searching) {
-        return const SliverFillRemaining(
-          child: Center(
-            child: CircularProgressIndicator(color: Colors.white),
-          ),
-        );
-      }
-
-      if (users.isEmpty) {
-        return SliverFillRemaining(
-          child: Center(
-            child: Text(
-              'No users found for "$query"',
-              style: GoogleFonts.inter(
-                color: Colors.white.withOpacity(0.68),
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        );
-      }
-
-      return SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) => _UserSearchCard(doc: users[index]),
-          childCount: users.length,
-        ),
-      );
-    }
-
-    if (selectedType == 'shelves') {
-      return SliverFillRemaining(
-        child: Center(
-          child: Text(
-            'Shelf discovery is coming soon.',
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.68),
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-      );
-    }
-
     if (searching) {
-      return const SliverFillRemaining(
+      return const SizedBox(
+        height: 420,
         child: Center(
           child: CircularProgressIndicator(color: Colors.white),
         ),
       );
     }
 
-    if (items.isEmpty) {
-      return SliverFillRemaining(
-        child: Center(
-          child: Text(
-            'No results for "$query"',
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.68),
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
+    if (selectedType == 'users') {
+      if (users.isEmpty) {
+        return _EmptySearchMessage(
+          text: query.trim().isEmpty ? 'No users yet' : 'No users found',
+        );
+      }
+
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: users.length,
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 430,
+          mainAxisExtent: 150,
+          mainAxisSpacing: 14,
+          crossAxisSpacing: 14,
         ),
+        itemBuilder: (context, index) => _UserSearchCard(doc: users[index]),
       );
     }
 
-    return SliverGrid(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) => _PosterCard(item: items[index]),
-        childCount: items.length,
-      ),
+    if (selectedType == 'shelves') {
+      if (shelves.isEmpty) {
+        return _EmptySearchMessage(
+          text: query.trim().isEmpty ? 'No shelves yet' : 'No shelves found',
+        );
+      }
+
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: shelves.length,
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 460,
+          mainAxisExtent: 132,
+          mainAxisSpacing: 14,
+          crossAxisSpacing: 14,
+        ),
+        itemBuilder: (context, index) => _ShelfSearchCard(doc: shelves[index]),
+      );
+    }
+
+    if (items.isEmpty) {
+      return _EmptySearchMessage(text: 'No results for "$query"');
+    }
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: items.length,
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 180,
         mainAxisExtent: 286,
         mainAxisSpacing: 24,
         crossAxisSpacing: 18,
+      ),
+      itemBuilder: (context, index) => _PosterCard(item: items[index]),
+    );
+  }
+}
+
+class _EmptySearchMessage extends StatelessWidget {
+  final String text;
+
+  const _EmptySearchMessage({
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 420,
+      child: Center(
+        child: Text(
+          text,
+          style: GoogleFonts.inter(
+            color: Colors.white.withOpacity(0.68),
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ),
     );
   }
@@ -687,10 +877,11 @@ class _UserSearchCard extends StatelessWidget {
     final username = (data['username'] ?? '').toString();
     final photoUrl =
         (data['photoUrl'] ?? data['avatarUrl'] ?? '').toString().trim();
-    final bio = (data['bio'] ?? '').toString();
+    final bio = (data['bio'] ?? '').toString().trim();
     final followers = ((data['followers'] as List?) ?? []).length;
 
-    return GestureDetector(
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
       onTap: () {
         Navigator.push(
           context,
@@ -700,23 +891,22 @@ class _UserSearchCard extends StatelessWidget {
         );
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 14),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.045),
-          borderRadius: BorderRadius.circular(24),
+          color: const Color(0xFF101014),
+          borderRadius: BorderRadius.circular(22),
           border: Border.all(color: Colors.white.withOpacity(0.07)),
         ),
         child: Row(
           children: [
             CircleAvatar(
-              radius: 30,
+              radius: 34,
               backgroundColor: Colors.white.withOpacity(0.08),
               backgroundImage:
                   photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
               child: photoUrl.isEmpty
                   ? Text(
-                      name.trim().isNotEmpty ? name[0].toUpperCase() : 'U',
+                      name.isNotEmpty ? name[0].toUpperCase() : 'U',
                       style: GoogleFonts.inter(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
@@ -726,54 +916,66 @@ class _UserSearchCard extends StatelessWidget {
             ),
             const SizedBox(width: 14),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  if (username.isNotEmpty) ...[
-                    const SizedBox(height: 3),
+              child: SizedBox(
+                height: 110,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      '@$username',
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
-                        color: Colors.white.withOpacity(0.55),
-                        fontSize: 12.5,
+                        color: Colors.white,
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    if (username.isNotEmpty)
+                      Text(
+                        '@$username',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: kDiscoverAccent,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    const SizedBox(height: 5),
+                    if (bio.isNotEmpty)
+                      Text(
+                        bio,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: Colors.white.withOpacity(0.45),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    const SizedBox(height: 7),
+                    Text(
+                      '$followers followers',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        color: Colors.white.withOpacity(0.38),
+                        fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
-                  if (bio.trim().isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      bio,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        color: Colors.white.withOpacity(0.42),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ],
+                ),
               ),
             ),
-            const SizedBox(width: 12),
-            Text(
-              '$followers followers',
-              style: GoogleFonts.inter(
-                color: kDiscoverAccent,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-              ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white.withOpacity(0.35),
+              size: 24,
             ),
           ],
         ),
@@ -782,6 +984,152 @@ class _UserSearchCard extends StatelessWidget {
   }
 }
 
+class _ShelfSearchCard extends StatelessWidget {
+  final QueryDocumentSnapshot<Map<String, dynamic>> doc;
+
+  const _ShelfSearchCard({
+    required this.doc,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final data = doc.data();
+
+    final name = (data['name'] ?? 'Untitled shelf').toString();
+    final description = (data['description'] ?? '').toString().trim();
+    final imageUrl = (data['imageUrl'] ?? '').toString().trim();
+    final ownerId =
+        (data['ownerId'] ?? doc.reference.parent.parent?.id ?? '').toString();
+    final itemsCount = (data['itemsCount'] ?? 0) is num
+        ? (data['itemsCount'] as num).toInt()
+        : 0;
+    final peopleCount = (((data['collaboratorIds'] as List?) ?? []).length) + 1;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: ownerId.isEmpty
+          ? null
+          : () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ShelfScreen(
+                    ownerId: ownerId,
+                    shelfId: doc.id,
+                  ),
+                ),
+              );
+            },
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF101014),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: Colors.white.withOpacity(0.07)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 74,
+              height: 94,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.07),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: imageUrl.isNotEmpty
+                  ? Image.network(
+                      imageUrl,
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.high,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.collections_bookmark_outlined,
+                        color: Colors.white54,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.collections_bookmark_outlined,
+                      color: Colors.white54,
+                    ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        color: Colors.white.withOpacity(0.45),
+                        fontSize: 12.5,
+                        height: 1.3,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 9),
+                  Text(
+                    '$itemsCount items • $peopleCount people',
+                    style: GoogleFonts.inter(
+                      color: kDiscoverAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white.withOpacity(0.35),
+              size: 24,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniInfoPill extends StatelessWidget {
+  final String text;
+
+  const _MiniInfoPill({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: GoogleFonts.inter(
+          color: Colors.white.withOpacity(0.70),
+          fontSize: 10.8,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
 class _FreshPickGrid extends StatelessWidget {
   final OnboardingMediaItem featured;
   final List<OnboardingMediaItem> sideItems;
@@ -962,7 +1310,6 @@ class _SidePosterCard extends StatelessWidget {
     );
   }
 }
-
 class _PosterSection extends StatelessWidget {
   final String title;
   final List<OnboardingMediaItem> items;
@@ -1057,6 +1404,7 @@ class _PosterCard extends StatelessWidget {
                       height: double.infinity,
                       fit: BoxFit.cover,
                       alignment: Alignment.topCenter,
+                      filterQuality: FilterQuality.high,
                       errorBuilder: (_, __, ___) => _fallback(item.domain),
                     ),
             ),
@@ -1088,7 +1436,6 @@ class _PosterCard extends StatelessWidget {
     );
   }
 }
-
 class _VibeSection extends StatelessWidget {
   final DiscoverData data;
   final void Function(String, List<OnboardingMediaItem>) onOpen;
@@ -1179,7 +1526,6 @@ class _VibeData {
 
   const _VibeData(this.title, this.icon, this.items);
 }
-
 class _Pill extends StatelessWidget {
   final String label;
 
@@ -1215,7 +1561,7 @@ class _FutureDiscoveryBlock extends StatelessWidget {
         Expanded(
           child: _FutureCard(
             title: 'Shelves',
-            subtitle: 'Community collections later',
+            subtitle: 'Search public shelves',
             icon: Icons.collections_bookmark_outlined,
           ),
         ),
@@ -1360,7 +1706,6 @@ class _FilterGroup extends StatelessWidget {
     );
   }
 }
-
 String _image(String url) {
   if (url.contains('image.tmdb.org/t/p/w500')) {
     return url.replaceAll('/w500/', '/original/');
