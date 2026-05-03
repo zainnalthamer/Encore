@@ -3,10 +3,10 @@ import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../../core/services/cloudinary_service.dart';
 
 import '../../../core/models/onboarding_media_item.dart';
 import '../../../core/services/auth_service.dart';
@@ -765,6 +765,7 @@ class _CreateShelfDialogState extends State<_CreateShelfDialog> {
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
+  final CloudinaryService _cloudinary = CloudinaryService();
 
   Uint8List? _selectedImageBytes;
   String? _selectedImageName;
@@ -794,29 +795,6 @@ class _CreateShelfDialogState extends State<_CreateShelfDialog> {
       _selectedImageName = picked.name;
     });
   }
-
-  Future<String> _uploadShelfImageAfterCreate(String shelfId) async {
-  if (_selectedImageBytes == null) return '';
-
-  final safeFileName =
-      (_selectedImageName == null || _selectedImageName!.trim().isEmpty)
-          ? 'cover.jpg'
-          : _selectedImageName!.replaceAll(' ', '_');
-
-  final ref = FirebaseStorage.instance
-      .ref()
-      .child('shelves')
-      .child(widget.profileUid)
-      .child(shelfId)
-      .child(safeFileName);
-
-  await ref.putData(
-    _selectedImageBytes!,
-    SettableMetadata(contentType: 'image/jpeg'),
-  );
-
-  return ref.getDownloadURL();
-}
 
   // Future<String> _tryUploadShelfImage(String shelfId) async {
   //   if (_selectedImageBytes == null) return '';
@@ -866,39 +844,35 @@ class _CreateShelfDialogState extends State<_CreateShelfDialog> {
 
   setState(() => _saving = true);
 
-  final shelfRef = FirebaseFirestore.instance
-      .collection('users')
-      .doc(widget.profileUid)
-      .collection('shelves')
-      .doc();
-
   try {
+    String imageUrl = '';
+
+    if (_selectedImageBytes != null) {
+      final pickedFile = XFile.fromData(
+        _selectedImageBytes!,
+        name: _selectedImageName ?? 'cover.jpg',
+      );
+
+      imageUrl = await _cloudinary.uploadShelfImage(pickedFile);
+    }
+
+    final shelfRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.profileUid)
+        .collection('shelves')
+        .doc();
+
     await shelfRef.set({
       'name': name,
       'description': description,
-      'imageUrl': '',
-      'imageSource': 'empty',
+      'imageUrl': imageUrl,
+      'imageSource': imageUrl.isEmpty ? 'empty' : 'cloudinary',
       'itemIds': <String>[],
       'itemsCount': 0,
       'ownerId': widget.profileUid,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
-
-    if (_selectedImageBytes != null) {
-      try {
-        final imageUrl = await _uploadShelfImageAfterCreate(shelfRef.id)
-            .timeout(const Duration(seconds: 12));
-
-        if (imageUrl.isNotEmpty) {
-          await shelfRef.update({
-            'imageUrl': imageUrl,
-            'imageSource': 'uploaded',
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-        }
-      } catch (_) {}
-    }
 
     if (!mounted) return;
     Navigator.of(context).pop();
