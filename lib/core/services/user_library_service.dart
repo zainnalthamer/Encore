@@ -80,7 +80,6 @@ class UserLibraryService {
   ) {
     return _itemRef(itemId)
         .collection('reviews')
-        .orderBy('createdAt', descending: true)
         .snapshots();
   }
 
@@ -200,11 +199,15 @@ Future<void> toggleFavorite({
     throw Exception('User not logged in');
   }
 
-  final batch = _db.batch();
-  final reviewRef = _itemRef(item.id).collection('reviews').doc();
+  final itemRef = _itemRef(item.id);
+  final reviewRef = itemRef.collection('reviews').doc();
 
-  batch.set(
-    _libraryItemRef(item.id),
+  await itemRef.set(
+    _publicItemData(item),
+    SetOptions(merge: true),
+  );
+
+  await _libraryItemRef(item.id).set(
     {
       ..._baseItemData(item),
       'userRating': rating,
@@ -217,7 +220,7 @@ Future<void> toggleFavorite({
     SetOptions(merge: true),
   );
 
-  batch.set(reviewRef, {
+  await reviewRef.set({
     'uid': user.uid,
     'itemId': item.id,
     'safeItemId': _safeDocId(item.id),
@@ -235,7 +238,7 @@ Future<void> toggleFavorite({
     'createdAt': FieldValue.serverTimestamp(),
   });
 
-  batch.set(_activityRef().doc(), {
+  await _activityRef().doc().set({
     ..._activityData(item),
     'type': 'reviewed',
     'activityType': 'reviewed',
@@ -245,8 +248,6 @@ Future<void> toggleFavorite({
     'text': review,
     'createdAt': FieldValue.serverTimestamp(),
   });
-
-  await batch.commit();
 }
 
   Future<void> deleteReview({

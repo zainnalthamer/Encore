@@ -8,6 +8,9 @@ import 'features/home/screens/home_screen.dart';
 import 'features/discover/screens/discover_screen.dart';
 import 'features/profile/screens/profile_screen.dart';
 
+import 'package:flutter/foundation.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -16,6 +19,12 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  if (kIsWeb) {
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: false,
+    );
+  }
 
   runApp(const MyApp());
 }

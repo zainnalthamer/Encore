@@ -1393,8 +1393,79 @@ class _CommunityReviewsCard extends StatelessWidget {
     required this.onOpenReview,
   });
 
+  Future<void> _deleteReview({
+    required BuildContext context,
+    required String reviewId,
+  }) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF101014),
+          title: Text(
+            'Delete review?',
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          content: Text(
+            'This will remove your review permanently.',
+            style: GoogleFonts.inter(
+              color: Colors.white.withOpacity(0.65),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.inter(color: Colors.white70),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(
+                'Delete',
+                style: GoogleFonts.inter(
+                  color: const Color(0xFFFF8B3D),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('items')
+          .doc(itemId)
+          .collection('reviews')
+          .doc(reviewId)
+          .delete();
+
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Review deleted.')),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not delete review.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
     return _SectionCard(
       child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: libraryService.watchReviewsForItem(itemId),
@@ -1409,10 +1480,18 @@ class _CommunityReviewsCard extends StatelessWidget {
                 subtitle: 'Tap any review to read it fully',
               ),
               const SizedBox(height: 16),
-              if (snapshot.connectionState == ConnectionState.waiting)
+              if (snapshot.hasError)
+                Text(
+                  'Could not load reviews: ${snapshot.error}',
+                  style: GoogleFonts.inter(
+                  color: Colors.white.withOpacity(0.65),
+                  fontSize: 13,
+                ),
+              )
+              else if (snapshot.connectionState == ConnectionState.waiting)
                 const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                )
+                child: CircularProgressIndicator(color: Colors.white),
+              )
               else if (docs.isEmpty)
                 Text(
                   'No reviews yet.',
@@ -1425,12 +1504,19 @@ class _CommunityReviewsCard extends StatelessWidget {
                 Column(
                   children: docs.map((doc) {
                     final data = doc.data();
+
                     final name =
                         (data['displayName'] ?? 'Encore User').toString();
                     final username = (data['username'] ?? '').toString();
                     final photoUrl = (data['photoUrl'] ?? '').toString();
-                    final rating = ((data['rating'] ?? 0) as num).toDouble();
+                    final rating =
+                        ((data['rating'] ?? 0) as num).toDouble();
                     final review = (data['review'] ?? '').toString();
+                    final reviewOwnerUid = (data['uid'] ?? '').toString();
+
+                    final canDelete = currentUid != null &&
+                        currentUid.isNotEmpty &&
+                        reviewOwnerUid == currentUid;
 
                     return _CommunityReviewTile(
                       name: name,
@@ -1438,6 +1524,13 @@ class _CommunityReviewsCard extends StatelessWidget {
                       photoUrl: photoUrl,
                       rating: rating,
                       review: review,
+                      canDelete: canDelete,
+                      onDelete: canDelete
+                          ? () => _deleteReview(
+                                context: context,
+                                reviewId: doc.id,
+                              )
+                          : null,
                       onTap: () {
                         onOpenReview(
                           name: name,
@@ -1464,6 +1557,8 @@ class _CommunityReviewTile extends StatelessWidget {
   final String photoUrl;
   final double rating;
   final String review;
+  final bool canDelete;
+  final VoidCallback? onDelete;
   final VoidCallback onTap;
 
   const _CommunityReviewTile({
@@ -1472,6 +1567,8 @@ class _CommunityReviewTile extends StatelessWidget {
     required this.photoUrl,
     required this.rating,
     required this.review,
+    required this.canDelete,
+    required this.onDelete,
     required this.onTap,
   });
 
@@ -1533,6 +1630,26 @@ class _CommunityReviewTile extends StatelessWidget {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
+                      if (canDelete) ...[
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () {
+                            onDelete?.call();
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.06),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.delete_outline_rounded,
+                              color: Color(0xFFFF8B3D),
+                              size: 17,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   if (username.trim().isNotEmpty) ...[
