@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/models/onboarding_media_item.dart';
 import '../../../core/services/discover_api_service.dart';
 import '../../../core/services/social_service.dart';
+import '../../ai/widgets/ai_recommendation_panel.dart';
 import '../../items/screens/item_details_screen.dart';
 import '../../profile/screens/profile_screen.dart';
 import '../../profile/screens/shelf_screen.dart';
@@ -64,7 +65,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     super.dispose();
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _loadAllUsers() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _loadAllUsers() async {
     final snapshot = await FirebaseFirestore.instance
         .collection('users')
         .limit(60)
@@ -86,7 +88,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     return users;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _loadAllShelves() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _loadAllShelves() async {
     final snapshot = await FirebaseFirestore.instance
         .collectionGroup('shelves')
         .limit(60)
@@ -226,7 +229,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       });
     });
   }
-    void _openResults(String title, List<OnboardingMediaItem> items) {
+
+  void _openResults(String title, List<OnboardingMediaItem> items) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -235,6 +239,39 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           items: items,
         ),
       ),
+    );
+  }
+
+  void _openAiPanel() {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'AI Panel',
+      barrierColor: Colors.black.withOpacity(0.45),
+      transitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (_, __, ___) {
+        return const Align(
+          alignment: Alignment.centerRight,
+          child: AiRecommendationPanel(),
+        );
+      },
+      transitionBuilder: (_, animation, __, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(1, 0),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
     );
   }
 
@@ -331,8 +368,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       },
     );
   }
-
-  List<OnboardingMediaItem> _uniqueMix(List<OnboardingMediaItem> items) {
+    List<OnboardingMediaItem> _uniqueMix(List<OnboardingMediaItem> items) {
     final seen = <String>{};
     final output = <OnboardingMediaItem>[];
 
@@ -379,10 +415,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   @override
   Widget build(BuildContext context) {
     final hasSearch = _query.trim().isNotEmpty;
-    final directoryMode = _selectedType == 'users' || _selectedType == 'shelves';
+    final directoryMode =
+        _selectedType == 'users' || _selectedType == 'shelves';
 
     return Scaffold(
       backgroundColor: kDiscoverBg,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: _AiCornerButton(onTap: _openAiPanel),
       body: Stack(
         children: [
           FutureBuilder<DiscoverData>(
@@ -408,17 +447,17 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   if (hasSearch || directoryMode)
                     SliverToBoxAdapter(
                       child: Padding(
-                      padding: const EdgeInsets.fromLTRB(22, 0, 22, 120),
-                      child: _SearchResultsBody(
-                        searching: _searching || _loadingDirectory,
-                        query: _query,
-                        selectedType: _selectedType,
-                        items: _searchResults,
-                        users: _userResults,
-                        shelves: _shelfResults,
+                        padding: const EdgeInsets.fromLTRB(22, 0, 22, 120),
+                        child: _SearchResultsBody(
+                          searching: _searching || _loadingDirectory,
+                          query: _query,
+                          selectedType: _selectedType,
+                          items: _searchResults,
+                          users: _userResults,
+                          shelves: _shelfResults,
+                        ),
                       ),
-                  ),
-                )
+                    )
                   else if (snapshot.connectionState == ConnectionState.waiting)
                     const SliverFillRemaining(
                       child: Center(
@@ -529,6 +568,58 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     );
   }
 }
+
+class _AiCornerButton extends StatefulWidget {
+  final VoidCallback onTap;
+
+  const _AiCornerButton({
+    required this.onTap,
+  });
+
+  @override
+  State<_AiCornerButton> createState() => _AiCornerButtonState();
+}
+
+class _AiCornerButtonState extends State<_AiCornerButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedScale(
+        scale: _hovered ? 1.06 : 1.0,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFF8B3D),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFFF8B3D).withOpacity(0.35),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.auto_awesome_rounded,
+              color: Colors.black,
+              size: 26,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DiscoverTopNav extends StatelessWidget {
   const _DiscoverTopNav();
 
@@ -581,7 +672,6 @@ class _DiscoverTopNav extends StatelessWidget {
     );
   }
 }
-
 class _NavText extends StatelessWidget {
   final String label;
   final bool active;
@@ -666,7 +756,8 @@ class _SearchHeader extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 18),
+                    contentPadding:
+                        const EdgeInsets.symmetric(vertical: 18),
                   ),
                 ),
               ),
@@ -680,7 +771,8 @@ class _SearchHeader extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.065),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withOpacity(0.08)),
+                  border:
+                      Border.all(color: Colors.white.withOpacity(0.08)),
                 ),
                 child: const Icon(
                   Icons.tune_rounded,
@@ -731,7 +823,8 @@ class _SmallFilterPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
       decoration: BoxDecoration(
         color: active ? kDiscoverAccent : Colors.white.withOpacity(0.07),
         borderRadius: BorderRadius.circular(999),
@@ -771,7 +864,8 @@ class _SearchResultsBody extends StatelessWidget {
       return const SizedBox(
         height: 420,
         child: Center(
-          child: CircularProgressIndicator(color: Colors.white),
+          child:
+              CircularProgressIndicator(color: Colors.white),
         ),
       );
     }
@@ -779,7 +873,9 @@ class _SearchResultsBody extends StatelessWidget {
     if (selectedType == 'users') {
       if (users.isEmpty) {
         return _EmptySearchMessage(
-          text: query.trim().isEmpty ? 'No users yet' : 'No users found',
+          text: query.trim().isEmpty
+              ? 'No users yet'
+              : 'No users found',
         );
       }
 
@@ -787,20 +883,24 @@ class _SearchResultsBody extends StatelessWidget {
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         itemCount: users.length,
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        gridDelegate:
+            const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 430,
           mainAxisExtent: 150,
           mainAxisSpacing: 14,
           crossAxisSpacing: 14,
         ),
-        itemBuilder: (context, index) => _UserSearchCard(doc: users[index]),
+        itemBuilder: (context, index) =>
+            _UserSearchCard(doc: users[index]),
       );
     }
 
     if (selectedType == 'shelves') {
       if (shelves.isEmpty) {
         return _EmptySearchMessage(
-          text: query.trim().isEmpty ? 'No shelves yet' : 'No shelves found',
+          text: query.trim().isEmpty
+              ? 'No shelves yet'
+              : 'No shelves found',
         );
       }
 
@@ -808,31 +908,36 @@ class _SearchResultsBody extends StatelessWidget {
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         itemCount: shelves.length,
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        gridDelegate:
+            const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 460,
           mainAxisExtent: 132,
           mainAxisSpacing: 14,
           crossAxisSpacing: 14,
         ),
-        itemBuilder: (context, index) => _ShelfSearchCard(doc: shelves[index]),
+        itemBuilder: (context, index) =>
+            _ShelfSearchCard(doc: shelves[index]),
       );
     }
 
     if (items.isEmpty) {
-      return _EmptySearchMessage(text: 'No results for "$query"');
+      return _EmptySearchMessage(
+          text: 'No results for "$query"');
     }
 
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: items.length,
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+      gridDelegate:
+          const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 180,
         mainAxisExtent: 286,
         mainAxisSpacing: 24,
         crossAxisSpacing: 18,
       ),
-      itemBuilder: (context, index) => _PosterCard(item: items[index]),
+      itemBuilder: (context, index) =>
+          _PosterCard(item: items[index]),
     );
   }
 }
@@ -861,7 +966,6 @@ class _EmptySearchMessage extends StatelessWidget {
     );
   }
 }
-
 class _UserSearchCard extends StatelessWidget {
   final QueryDocumentSnapshot<Map<String, dynamic>> doc;
 
@@ -1000,9 +1104,11 @@ class _ShelfSearchCard extends StatelessWidget {
     final imageUrl = (data['imageUrl'] ?? '').toString().trim();
     final ownerId =
         (data['ownerId'] ?? doc.reference.parent.parent?.id ?? '').toString();
+
     final itemsCount = (data['itemsCount'] ?? 0) is num
         ? (data['itemsCount'] as num).toInt()
         : 0;
+
     final peopleCount = (((data['collaboratorIds'] as List?) ?? []).length) + 1;
 
     return InkWell(
@@ -1109,7 +1215,9 @@ class _ShelfSearchCard extends StatelessWidget {
 class _MiniInfoPill extends StatelessWidget {
   final String text;
 
-  const _MiniInfoPill({required this.text});
+  const _MiniInfoPill({
+    required this.text,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1130,6 +1238,7 @@ class _MiniInfoPill extends StatelessWidget {
     );
   }
 }
+
 class _FreshPickGrid extends StatelessWidget {
   final OnboardingMediaItem featured;
   final List<OnboardingMediaItem> sideItems;
@@ -1147,7 +1256,10 @@ class _FreshPickGrid extends StatelessWidget {
       height: 322,
       child: Row(
         children: [
-          Expanded(flex: 3, child: _FeaturedCard(item: featured)),
+          Expanded(
+            flex: 3,
+            child: _FeaturedCard(item: featured),
+          ),
           const SizedBox(width: 16),
           Expanded(
             flex: 2,
@@ -1169,11 +1281,12 @@ class _FreshPickGrid extends StatelessWidget {
     );
   }
 }
-
 class _FeaturedCard extends StatelessWidget {
   final OnboardingMediaItem item;
 
-  const _FeaturedCard({required this.item});
+  const _FeaturedCard({
+    required this.item,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1194,6 +1307,7 @@ class _FeaturedCard extends StatelessWidget {
               imageUrl,
               fit: BoxFit.cover,
               alignment: Alignment.center,
+              filterQuality: FilterQuality.high,
               errorBuilder: (_, __, ___) => _fallback(item.domain),
             ),
             DecoratedBox(
@@ -1253,7 +1367,9 @@ class _FeaturedCard extends StatelessWidget {
 class _SidePosterCard extends StatelessWidget {
   final OnboardingMediaItem item;
 
-  const _SidePosterCard({required this.item});
+  const _SidePosterCard({
+    required this.item,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1274,6 +1390,7 @@ class _SidePosterCard extends StatelessWidget {
               imageUrl,
               fit: BoxFit.cover,
               alignment: Alignment.topCenter,
+              filterQuality: FilterQuality.high,
               errorBuilder: (_, __, ___) => _fallback(item.domain),
             ),
             DecoratedBox(
@@ -1310,6 +1427,7 @@ class _SidePosterCard extends StatelessWidget {
     );
   }
 }
+
 class _PosterSection extends StatelessWidget {
   final String title;
   final List<OnboardingMediaItem> items;
@@ -1381,7 +1499,9 @@ class _PosterSection extends StatelessWidget {
 class _PosterCard extends StatelessWidget {
   final OnboardingMediaItem item;
 
-  const _PosterCard({required this.item});
+  const _PosterCard({
+    required this.item,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1436,6 +1556,7 @@ class _PosterCard extends StatelessWidget {
     );
   }
 }
+
 class _VibeSection extends StatelessWidget {
   final DiscoverData data;
   final void Function(String, List<OnboardingMediaItem>) onOpen;
@@ -1524,12 +1645,18 @@ class _VibeData {
   final IconData icon;
   final List<OnboardingMediaItem> items;
 
-  const _VibeData(this.title, this.icon, this.items);
+  const _VibeData(
+    this.title,
+    this.icon,
+    this.items,
+  );
 }
 class _Pill extends StatelessWidget {
   final String label;
 
-  const _Pill({required this.label});
+  const _Pill({
+    required this.label,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1706,6 +1833,7 @@ class _FilterGroup extends StatelessWidget {
     );
   }
 }
+
 String _image(String url) {
   if (url.contains('image.tmdb.org/t/p/w500')) {
     return url.replaceAll('/w500/', '/original/');
