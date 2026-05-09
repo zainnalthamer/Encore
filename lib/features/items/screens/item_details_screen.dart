@@ -6,6 +6,7 @@ import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 
@@ -40,6 +41,21 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
   static const Color _accent = Color(0xFFFF8B3D);
   static const Color _bg = Color(0xFF050507);
 
+  OnboardingMediaItem get _trackedItem {
+    final safeSource = widget.item.discoverySource.trim().isNotEmpty
+        ? widget.item.discoverySource.trim()
+        : 'direct';
+
+    final safeContext = widget.item.discoveryContext.trim().isNotEmpty
+        ? widget.item.discoveryContext.trim()
+        : 'Item details';
+
+    return widget.item.copyWith(
+      discoverySource: safeSource,
+      discoveryContext: safeContext,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -53,11 +69,20 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
       if (!mounted || data == null) return;
 
       setState(() {
-        _saved = data['isSaved'] == true;
-        _favorite = data['isFavorite'] == true;
+        _saved = data['isSaved'] == true || data['saved'] == true;
+        _favorite = data['isFavorite'] == true || data['favorite'] == true;
         _status = (data['status'] ?? _status).toString();
-        _userRating = ((data['userRating'] ?? 0) as num).toDouble();
-        _lastReview = (data['lastReview'] ?? '').toString();
+
+        final ratingValue =
+            data['userRating'] ?? data['rating'] ?? data['latestRating'] ?? 0;
+
+        _userRating = ratingValue is num
+            ? ratingValue.toDouble()
+            : double.tryParse(ratingValue.toString()) ?? 0;
+
+        _lastReview =
+            (data['lastReview'] ?? data['latestReview'] ?? data['review'] ?? '')
+                .toString();
       });
     });
   }
@@ -155,15 +180,24 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
   }
 
   Future<void> _toggleSaved() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      _showSnack('Please sign in first.');
+      return;
+    }
+
     final newValue = !_saved;
     setState(() => _saved = newValue);
 
     try {
       await _libraryService.toggleSaved(
-        item: widget.item,
+        item: _trackedItem,
         saved: newValue,
       );
-    } catch (_) {
+    } catch (e) {
+      log('toggleSaved failed: $e');
+
       if (!mounted) return;
       setState(() => _saved = !newValue);
       _showSnack('Could not update saved item.');
@@ -171,15 +205,24 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
   }
 
   Future<void> _toggleFavorite() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      _showSnack('Please sign in first.');
+      return;
+    }
+
     final newValue = !_favorite;
     setState(() => _favorite = newValue);
 
     try {
       await _libraryService.toggleFavorite(
-        item: widget.item,
+        item: _trackedItem,
         favorite: newValue,
       );
-    } catch (_) {
+    } catch (e) {
+      log('toggleFavorite failed: $e');
+
       if (!mounted) return;
       setState(() => _favorite = !newValue);
       _showSnack('Could not update favorite.');
@@ -187,15 +230,29 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
   }
 
   Future<void> _saveRating(double rating) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      _showSnack('Please sign in first.');
+      return;
+    }
+
     try {
       await _libraryService.updateRating(
-        item: widget.item,
+        item: _trackedItem,
         rating: rating,
       );
 
       if (!mounted) return;
+
+      setState(() {
+        _userRating = rating;
+      });
+
       _showSnack('Rating saved.');
-    } catch (_) {
+    } catch (e) {
+      log('saveRating failed: $e');
+
       if (!mounted) return;
       _showSnack('Could not save rating.');
     }
@@ -214,19 +271,32 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
 
     final user = FirebaseAuth.instance.currentUser;
 
+    if (user == null) {
+      _showSnack('Please sign in first.');
+      return;
+    }
+
     try {
       await _libraryService.addReview(
-        item: widget.item,
+        item: _trackedItem,
         rating: rating,
         review: cleanReview,
-        displayName: user?.displayName ?? 'Encore User',
-        username: user?.email?.split('@').first ?? '',
-        photoUrl: user?.photoURL ?? '',
+        displayName: user.displayName ?? 'Encore User',
+        username: user.email?.split('@').first ?? '',
+        photoUrl: user.photoURL ?? '',
       );
 
       if (!mounted) return;
+
+      setState(() {
+        _userRating = rating;
+        _lastReview = cleanReview;
+      });
+
       _showSnack('Review added.');
-    } catch (_) {
+    } catch (e) {
+      log('addReview failed: $e');
+
       if (!mounted) return;
       _showSnack('Could not add review.');
     }
@@ -237,8 +307,7 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
       SnackBar(content: Text(message)),
     );
   }
-
-  void _showStatusSheet() {
+    void _showStatusSheet() {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -281,14 +350,23 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
 
                 return GestureDetector(
                   onTap: () async {
+                    final previousStatus = _status;
                     setState(() => _status = status);
 
-                    await _libraryService.updateStatus(
-                      item: widget.item,
-                      status: status,
-                    );
+                    try {
+                      await _libraryService.updateStatus(
+                        item: _trackedItem,
+                        status: status,
+                      );
 
-                    if (context.mounted) Navigator.pop(context);
+                      if (context.mounted) Navigator.pop(context);
+                    } catch (e) {
+                      log('updateStatus failed: $e');
+
+                      if (!mounted) return;
+                      setState(() => _status = previousStatus);
+                      _showSnack('Could not update status.');
+                    }
                   },
                   child: Container(
                     margin: const EdgeInsets.only(bottom: 10),
@@ -448,7 +526,7 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final item = widget.item;
+    final item = _trackedItem;
     final providers = _fakeProviders(item.domain);
 
     return Scaffold(
@@ -530,7 +608,7 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
                     const SizedBox(height: 16),
                     _CommunityReviewsCard(
                       libraryService: _libraryService,
-                      itemId: widget.item.id,
+                      itemId: item.id,
                       onOpenReview: ({
                         required String name,
                         required String username,
@@ -565,7 +643,6 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
     );
   }
 }
-
 class _HeroSection extends StatelessWidget {
   final OnboardingMediaItem item;
   final bool saved;
@@ -853,7 +930,6 @@ class _NavText extends StatelessWidget {
     );
   }
 }
-
 class _ItemPublicStats extends StatelessWidget {
   final OnboardingMediaItem item;
 
@@ -861,9 +937,17 @@ class _ItemPublicStats extends StatelessWidget {
     required this.item,
   });
 
-  double _calculateAverageRating(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  double _calculateAverageRating(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
     final ratings = docs
-        .map((doc) => ((doc.data()['rating'] ?? 0) as num).toDouble())
+        .map((doc) {
+          final raw = doc.data()['rating'] ?? 0;
+
+          if (raw is num) return raw.toDouble();
+
+          return double.tryParse(raw.toString()) ?? 0.0;
+        })
         .where((rating) => rating > 0)
         .toList();
 
@@ -903,12 +987,29 @@ class _ItemPublicStats extends StatelessWidget {
       return {};
     }
 
-    final domainCounts = readCounts(userData['domainCounts']);
-    final genreCounts = readCounts(userData['genreCounts']);
-    final tagCounts = readCounts(userData['tagCounts']);
+    final derived = userData['derivedPreferences'] is Map<String, dynamic>
+        ? userData['derivedPreferences'] as Map<String, dynamic>
+        : <String, dynamic>{};
+
+    final domainCounts = {
+      ...readCounts(userData['domainCounts']),
+      ...readCounts(derived['domainCounts']),
+      ...readCounts(derived['favoriteDomains']),
+    };
+
+    final genreCounts = {
+      ...readCounts(userData['genreCounts']),
+      ...readCounts(derived['genreCounts']),
+      ...readCounts(derived['topGenres']),
+    };
+
+    final tagCounts = {
+      ...readCounts(userData['tagCounts']),
+      ...readCounts(derived['tagCounts']),
+      ...readCounts(derived['topTags']),
+    };
 
     final itemDomain = clean(item.domain);
-
     final itemGenres = item.genres.map((genre) => clean(genre)).toList();
     final itemTags = item.tags.map((tag) => clean(tag)).toList();
 
@@ -920,6 +1021,7 @@ class _ItemPublicStats extends StatelessWidget {
           return true;
         }
       }
+
       return false;
     }
 
@@ -1012,10 +1114,13 @@ class _ItemPublicStats extends StatelessWidget {
                 final websiteAverage = _calculateAverageRating(reviewDocs);
                 final apiAverage = item.apiRating;
 
-                final averageRating = websiteAverage > 0 ? websiteAverage : apiAverage;
+                final averageRating =
+                    websiteAverage > 0 ? websiteAverage : apiAverage;
+
                 final saveCount = realSaveCount > 0
                     ? realSaveCount
                     : _fakeSaveCountForItem(item.id);
+
                 final match = _calculateMatchPercentage(
                   userSnapshot.data?.data(),
                 );
@@ -1130,7 +1235,6 @@ class _StatTile extends StatelessWidget {
     );
   }
 }
-
 class _ReviewComposerCard extends StatefulWidget {
   final double rating;
   final String lastReview;
@@ -1181,6 +1285,7 @@ class _ReviewComposerCardState extends State<_ReviewComposerCard> {
 
   Future<void> _saveRating() async {
     setState(() => _savingRating = true);
+
     try {
       await widget.onSaveRating(_rating);
     } finally {
@@ -1190,6 +1295,7 @@ class _ReviewComposerCardState extends State<_ReviewComposerCard> {
 
   Future<void> _postReview() async {
     setState(() => _postingReview = true);
+
     try {
       await widget.onAddReview(
         rating: _rating,
@@ -1453,7 +1559,9 @@ class _CommunityReviewsCard extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Review deleted.')),
       );
-    } catch (_) {
+    } catch (e) {
+      log('deleteReview failed: $e');
+
       if (!context.mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1461,8 +1569,7 @@ class _CommunityReviewsCard extends StatelessWidget {
       );
     }
   }
-
-  @override
+    @override
   Widget build(BuildContext context) {
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
@@ -1484,14 +1591,14 @@ class _CommunityReviewsCard extends StatelessWidget {
                 Text(
                   'Could not load reviews: ${snapshot.error}',
                   style: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.65),
-                  fontSize: 13,
-                ),
-              )
+                    color: Colors.white.withOpacity(0.65),
+                    fontSize: 13,
+                  ),
+                )
               else if (snapshot.connectionState == ConnectionState.waiting)
                 const Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              )
+                  child: CircularProgressIndicator(color: Colors.white),
+                )
               else if (docs.isEmpty)
                 Text(
                   'No reviews yet.',
@@ -1509,8 +1616,12 @@ class _CommunityReviewsCard extends StatelessWidget {
                         (data['displayName'] ?? 'Encore User').toString();
                     final username = (data['username'] ?? '').toString();
                     final photoUrl = (data['photoUrl'] ?? '').toString();
-                    final rating =
-                        ((data['rating'] ?? 0) as num).toDouble();
+
+                    final ratingRaw = data['rating'] ?? 0;
+                    final rating = ratingRaw is num
+                        ? ratingRaw.toDouble()
+                        : double.tryParse(ratingRaw.toString()) ?? 0.0;
+
                     final review = (data['review'] ?? '').toString();
                     final reviewOwnerUid = (data['uid'] ?? '').toString();
 
@@ -1694,7 +1805,6 @@ class _CommunityReviewTile extends StatelessWidget {
     );
   }
 }
-
 class _AvailabilityCard extends StatelessWidget {
   final String title;
   final List<String> providers;
@@ -1771,8 +1881,8 @@ class _SimilarSection extends StatefulWidget {
 class _SimilarSectionState extends State<_SimilarSection> {
   late Future<List<OnboardingMediaItem>> _future;
 
-  static const String tmdbApiKey = 'YOUR_TMDB_API_KEY';
-  static const String rawgApiKey = 'YOUR_RAWG_API_KEY';
+  String get tmdbApiKey => dotenv.env['TMDB_API_KEY'] ?? '';
+  String get rawgApiKey => dotenv.env['RAWG_API_KEY'] ?? '';
 
   @override
   void initState() {
@@ -1799,7 +1909,9 @@ class _SimilarSectionState extends State<_SimilarSection> {
       debugPrint('Similar fetch failed: $e');
     }
 
-    if (items.length >= 3) return items.take(3).toList();
+    if (items.length >= 3) {
+      return items.take(3).map(_markSimilarSource).toList();
+    }
 
     final fallback = _fallbackItems(domain);
 
@@ -1811,11 +1923,19 @@ class _SimilarSectionState extends State<_SimilarSection> {
       }),
     ];
 
-    return merged.take(3).toList();
+    return merged.take(3).map(_markSimilarSource).toList();
+  }
+
+  OnboardingMediaItem _markSimilarSource(OnboardingMediaItem item) {
+    return item.copyWith(
+      discoverySource: 'similar',
+      discoveryContext: 'More like this',
+    );
   }
 
   List<OnboardingMediaItem> _fallbackItems(String domain) {
-    final genres = widget.currentItem.genres.map((e) => e.toLowerCase()).toList();
+    final genres =
+        widget.currentItem.genres.map((e) => e.toLowerCase()).toList();
     final tags = widget.currentItem.tags.map((e) => e.toLowerCase()).toList();
     final title = widget.currentItem.title.toLowerCase();
 
@@ -1836,9 +1956,11 @@ class _SimilarSectionState extends State<_SimilarSection> {
             domain: 'movies',
             genres: ['Horror', 'Mystery', 'Thriller'],
             tags: ['dark', 'psychological', 'suspense'],
-            imageUrl: 'https://image.tmdb.org/t/p/w780/tFXcEccSQMf3lfhfXKSU9iRBpa3.jpg',
+            imageUrl:
+                'https://image.tmdb.org/t/p/w780/tFXcEccSQMf3lfhfXKSU9iRBpa3.jpg',
             source: 'tmdb',
-            description: 'A psychological thriller about fear, control, and hidden violence.',
+            description:
+                'A psychological thriller about fear, control, and hidden violence.',
             apiRating: 3.85,
           ),
           OnboardingMediaItem(
@@ -1847,7 +1969,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
             domain: 'movies',
             genres: ['Thriller', 'Horror'],
             tags: ['psychological', 'dark', 'suspense'],
-            imageUrl: 'https://image.tmdb.org/t/p/w780/lli31lYTFpvxVBeFHWoe5PMfW5s.jpg',
+            imageUrl:
+                'https://image.tmdb.org/t/p/w780/lli31lYTFpvxVBeFHWoe5PMfW5s.jpg',
             source: 'tmdb',
             description: 'A tense psychological thriller.',
             apiRating: 3.65,
@@ -1858,9 +1981,11 @@ class _SimilarSectionState extends State<_SimilarSection> {
             domain: 'movies',
             genres: ['Mystery', 'Thriller'],
             tags: ['psychological', 'detective', 'dark'],
-            imageUrl: 'https://image.tmdb.org/t/p/w780/4GDy0PHYX3VRXUtwK5ysFbg3kEx.jpg',
+            imageUrl:
+                'https://image.tmdb.org/t/p/w780/4GDy0PHYX3VRXUtwK5ysFbg3kEx.jpg',
             source: 'tmdb',
-            description: 'A mystery thriller set around an investigation on an isolated island.',
+            description:
+                'A mystery thriller set around an investigation on an isolated island.',
             apiRating: 4.1,
           ),
         ];
@@ -1874,7 +1999,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
             domain: 'movies',
             genres: ['Romance', 'Drama', 'Music'],
             tags: ['love', 'dreams', 'emotional'],
-            imageUrl: 'https://image.tmdb.org/t/p/w780/uDO8zWDhfWwoFdKS4fzkUJt0Rf0.jpg',
+            imageUrl:
+                'https://image.tmdb.org/t/p/w780/uDO8zWDhfWwoFdKS4fzkUJt0Rf0.jpg',
             source: 'tmdb',
             description: 'A romantic drama about ambition, love, and dreams.',
             apiRating: 3.95,
@@ -1885,7 +2011,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
             domain: 'movies',
             genres: ['Romance', 'Drama'],
             tags: ['love', 'emotional', 'relationship'],
-            imageUrl: 'https://image.tmdb.org/t/p/w780/qom1SZSENdmHFNZBXbtJAU0WTlC.jpg',
+            imageUrl:
+                'https://image.tmdb.org/t/p/w780/qom1SZSENdmHFNZBXbtJAU0WTlC.jpg',
             source: 'tmdb',
             description: 'A romantic drama about lasting love.',
             apiRating: 3.9,
@@ -1896,15 +2023,15 @@ class _SimilarSectionState extends State<_SimilarSection> {
             domain: 'movies',
             genres: ['Romance', 'Drama'],
             tags: ['summer', 'love', 'emotional'],
-            imageUrl: 'https://image.tmdb.org/t/p/w780/mZ4gBdfkhP9tvLH1DO4m4HYtiyi.jpg',
+            imageUrl:
+                'https://image.tmdb.org/t/p/w780/mZ4gBdfkhP9tvLH1DO4m4HYtiyi.jpg',
             source: 'tmdb',
             description: 'A quiet coming-of-age romance.',
             apiRating: 4.0,
           ),
         ];
       }
-
-      if (hasAny(['animation', 'family', 'kids', 'comedy'])) {
+            if (hasAny(['animation', 'family', 'kids', 'comedy'])) {
         return const [
           OnboardingMediaItem(
             id: '150540',
@@ -1912,7 +2039,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
             domain: 'movies',
             genres: ['Animation', 'Family', 'Comedy'],
             tags: ['emotions', 'family', 'colorful'],
-            imageUrl: 'https://image.tmdb.org/t/p/w780/2H1TmgdfNtsKlU9jKdeNyYL5y8T.jpg',
+            imageUrl:
+                'https://image.tmdb.org/t/p/w780/2H1TmgdfNtsKlU9jKdeNyYL5y8T.jpg',
             source: 'tmdb',
             description: 'An animated story about emotions and growing up.',
             apiRating: 4.0,
@@ -1923,7 +2051,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
             domain: 'movies',
             genres: ['Animation', 'Family', 'Comedy'],
             tags: ['toys', 'friendship', 'adventure'],
-            imageUrl: 'https://image.tmdb.org/t/p/w780/uXDfjJbdP4ijW5hWSBrPrlKpxab.jpg',
+            imageUrl:
+                'https://image.tmdb.org/t/p/w780/uXDfjJbdP4ijW5hWSBrPrlKpxab.jpg',
             source: 'tmdb',
             description: 'A friendship adventure about toys coming to life.',
             apiRating: 4.0,
@@ -1934,7 +2063,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
             domain: 'movies',
             genres: ['Animation', 'Family', 'Comedy'],
             tags: ['friendship', 'summer', 'adventure'],
-            imageUrl: 'https://image.tmdb.org/t/p/w780/jTswp6KyDYKtvC52GbHagrZbGvD.jpg',
+            imageUrl:
+                'https://image.tmdb.org/t/p/w780/jTswp6KyDYKtvC52GbHagrZbGvD.jpg',
             source: 'tmdb',
             description: 'A warm animated coming-of-age story.',
             apiRating: 3.8,
@@ -1949,7 +2079,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
           domain: 'movies',
           genres: ['Action', 'Sci-Fi', 'Thriller'],
           tags: ['mind', 'dreams', 'heist'],
-          imageUrl: 'https://image.tmdb.org/t/p/w780/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg',
+          imageUrl:
+              'https://image.tmdb.org/t/p/w780/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg',
           source: 'tmdb',
           description: 'A sci-fi thriller about dreams and memory.',
           apiRating: 4.2,
@@ -1960,7 +2091,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
           domain: 'movies',
           genres: ['Sci-Fi', 'Drama', 'Adventure'],
           tags: ['space', 'time', 'emotional'],
-          imageUrl: 'https://image.tmdb.org/t/p/w780/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg',
+          imageUrl:
+              'https://image.tmdb.org/t/p/w780/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg',
           source: 'tmdb',
           description: 'A space drama about survival, time, and love.',
           apiRating: 4.35,
@@ -1971,7 +2103,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
           domain: 'movies',
           genres: ['Sci-Fi', 'Action'],
           tags: ['future', 'reality', 'technology'],
-          imageUrl: 'https://image.tmdb.org/t/p/w780/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg',
+          imageUrl:
+              'https://image.tmdb.org/t/p/w780/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg',
           source: 'tmdb',
           description: 'A sci-fi action film about reality and control.',
           apiRating: 4.1,
@@ -1991,7 +2124,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
           domain: 'shows',
           genres: ['Drama', 'Sci-Fi', 'Mystery'],
           tags: ['supernatural', 'friends', '80s'],
-          imageUrl: 'https://image.tmdb.org/t/p/w780/uOOtwVbSr4QDjAGIifLDwpb2Pdl.jpg',
+          imageUrl:
+              'https://image.tmdb.org/t/p/w780/uOOtwVbSr4QDjAGIifLDwpb2Pdl.jpg',
           source: 'tmdb',
           description: 'A small town uncovers supernatural mysteries.',
           apiRating: 4.3,
@@ -2002,7 +2136,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
           domain: 'shows',
           genres: ['Drama', 'Crime', 'Thriller'],
           tags: ['crime', 'dark', 'character study'],
-          imageUrl: 'https://image.tmdb.org/t/p/w780/3xnWaLQjelJDDF7LT1WBo6f4BRe.jpg',
+          imageUrl:
+              'https://image.tmdb.org/t/p/w780/3xnWaLQjelJDDF7LT1WBo6f4BRe.jpg',
           source: 'tmdb',
           description: 'A chemistry teacher becomes involved in crime.',
           apiRating: 4.4,
@@ -2013,7 +2148,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
           domain: 'shows',
           genres: ['Drama', 'Fantasy', 'Adventure'],
           tags: ['kingdoms', 'power', 'war'],
-          imageUrl: 'https://image.tmdb.org/t/p/w780/1XS1oqL89opfnbLl8WnZY1O1uJx.jpg',
+          imageUrl:
+              'https://image.tmdb.org/t/p/w780/1XS1oqL89opfnbLl8WnZY1O1uJx.jpg',
           source: 'tmdb',
           description: 'Noble families fight for power.',
           apiRating: 4.2,
@@ -2029,7 +2165,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
           domain: 'games',
           genres: ['RPG', 'Adventure'],
           tags: ['fantasy', 'open world', 'story'],
-          imageUrl: 'https://media.rawg.io/media/games/618/618c2031a07bbff6b4f611f10b6bcdbc.jpg',
+          imageUrl:
+              'https://media.rawg.io/media/games/618/618c2031a07bbff6b4f611f10b6bcdbc.jpg',
           source: 'rawg',
           description: 'A fantasy RPG following Geralt of Rivia.',
           apiRating: 4.65,
@@ -2040,7 +2177,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
           domain: 'games',
           genres: ['Action', 'Adventure'],
           tags: ['open world', 'crime', 'story'],
-          imageUrl: 'https://media.rawg.io/media/games/20a/20aa03a10caedf99a672ef8ca56f5797.jpg',
+          imageUrl:
+              'https://media.rawg.io/media/games/20a/20aa03a10caedf99a672ef8ca56f5797.jpg',
           source: 'rawg',
           description: 'An open-world action game set in Los Santos.',
           apiRating: 4.47,
@@ -2051,7 +2189,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
           domain: 'games',
           genres: ['Puzzle', 'Platformer'],
           tags: ['puzzle', 'sci-fi', 'comedy'],
-          imageUrl: 'https://media.rawg.io/media/games/2ba/2bac0e87a51a4090db76cc0e96bf9b67.jpg',
+          imageUrl:
+              'https://media.rawg.io/media/games/2ba/2bac0e87a51a4090db76cc0e96bf9b67.jpg',
           source: 'rawg',
           description: 'A puzzle game built around portals.',
           apiRating: 4.6,
@@ -2066,7 +2205,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
         domain: 'books',
         genres: ['Young Adult', 'Dystopian'],
         tags: ['survival', 'competition', 'rebellion'],
-        imageUrl: 'https://books.google.com/books/content?id=zyTCAlFPjgYC&printsec=frontcover&img=1&zoom=2',
+        imageUrl:
+            'https://books.google.com/books/content?id=zyTCAlFPjgYC&printsec=frontcover&img=1&zoom=2',
         source: 'google_books',
         description: 'A dystopian story about survival and rebellion.',
         apiRating: 4.3,
@@ -2077,7 +2217,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
         domain: 'books',
         genres: ['Fantasy', 'Adventure'],
         tags: ['magic', 'school', 'friendship'],
-        imageUrl: 'https://books.google.com/books/content?id=wrOQLV6xB-wC&printsec=frontcover&img=1&zoom=2',
+        imageUrl:
+            'https://books.google.com/books/content?id=wrOQLV6xB-wC&printsec=frontcover&img=1&zoom=2',
         source: 'google_books',
         description: 'A young wizard discovers his magical world.',
         apiRating: 4.5,
@@ -2088,18 +2229,22 @@ class _SimilarSectionState extends State<_SimilarSection> {
         domain: 'books',
         genres: ['Fantasy', 'Adventure'],
         tags: ['quest', 'dragon', 'journey'],
-        imageUrl: 'https://books.google.com/books/content?id=i8WCDwAAQBAJ&printsec=frontcover&img=1&zoom=2',
+        imageUrl:
+            'https://books.google.com/books/content?id=i8WCDwAAQBAJ&printsec=frontcover&img=1&zoom=2',
         source: 'google_books',
         description: 'Bilbo Baggins joins a journey to reclaim a mountain.',
         apiRating: 4.4,
       ),
     ];
   }
-
-  Future<List<OnboardingMediaItem>> _fetchTmdbItems({
+    Future<List<OnboardingMediaItem>> _fetchTmdbItems({
     required String type,
   }) async {
     final List<OnboardingMediaItem> collected = [];
+
+    if (tmdbApiKey.trim().isEmpty) {
+      return collected;
+    }
 
     Future<void> addFromUrl(String url) async {
       if (collected.length >= 3) return;
@@ -2132,6 +2277,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
             source: 'tmdb',
             description: (json['overview'] ?? '').toString(),
             apiRating: ((json['vote_average'] ?? 0) as num).toDouble() / 2,
+            discoverySource: 'similar',
+            discoveryContext: 'More like this',
           ),
         );
       }
@@ -2173,6 +2320,10 @@ class _SimilarSectionState extends State<_SimilarSection> {
   Future<List<OnboardingMediaItem>> _fetchRawgItems() async {
     final List<OnboardingMediaItem> collected = [];
 
+    if (rawgApiKey.trim().isEmpty) {
+      return collected;
+    }
+
     Future<void> addFromUrl(String url) async {
       if (collected.length >= 3) return;
 
@@ -2209,6 +2360,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
             source: 'rawg',
             description: '',
             apiRating: ((json['rating'] ?? 0) as num).toDouble(),
+            discoverySource: 'similar',
+            discoveryContext: 'More like this',
           ),
         );
       }
@@ -2283,6 +2436,8 @@ class _SimilarSectionState extends State<_SimilarSection> {
             source: 'google_books',
             description: (info['description'] ?? '').toString(),
             apiRating: ((info['averageRating'] ?? 0) as num).toDouble(),
+            discoverySource: 'similar',
+            discoveryContext: 'More like this',
           ),
         );
       }
@@ -2306,8 +2461,7 @@ class _SimilarSectionState extends State<_SimilarSection> {
 
     return collected.take(3).toList();
   }
-
-  @override
+    @override
   Widget build(BuildContext context) {
     return _SectionCard(
       child: FutureBuilder<List<OnboardingMediaItem>>(
@@ -2383,7 +2537,16 @@ class _SimilarItemCard extends StatelessWidget {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => ItemDetailsScreen(item: item),
+              builder: (_) => ItemDetailsScreen(
+                item: item.copyWith(
+                  discoverySource: item.discoverySource.trim().isNotEmpty
+                      ? item.discoverySource
+                      : 'similar',
+                  discoveryContext: item.discoveryContext.trim().isNotEmpty
+                      ? item.discoveryContext
+                      : 'More like this',
+                ),
+              ),
             ),
           );
         },
@@ -2488,7 +2651,6 @@ class _SimilarItemCard extends StatelessWidget {
     );
   }
 }
-
 class _PrimaryButton extends StatelessWidget {
   final String label;
   final IconData icon;
