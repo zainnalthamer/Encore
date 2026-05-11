@@ -1,13 +1,17 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/home_media_item.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class HomeFeedService {
-  // Replace these with your real keys.
-  // You can also move them to your existing service files later.
-  static const String _tmdbApiKey = 'YOUR_TMDB_API_KEY';
-  static const String _rawgApiKey = 'YOUR_RAWG_API_KEY';
-  static const String _googleBooksApiKey = '';
+  static final String _tmdbApiKey =
+      dotenv.env['TMDB_API_KEY'] ?? '';
+
+  static final String _rawgApiKey =
+      dotenv.env['RAWG_API_KEY'] ?? '';
+
+  static final String _googleBooksApiKey =
+      dotenv.env['GOOGLE_BOOKS_API_KEY'] ?? '';
 
   Future<HomeFeedBundle> buildFeed({
     required List<String> topGenres,

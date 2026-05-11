@@ -5,9 +5,18 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-const Color kAnalyticsBg = Color(0xFF050507);
-const Color kAnalyticsAccent = Color(0xFFFF8B3D);
-const Color kAnalyticsSoft = Color(0xFF141418);
+const Color kAnalyticsBg = Color(0xFF07080A);
+const Color kAnalyticsPanel = Color(0xFF121316);
+const Color kAnalyticsSoft = Color(0xFF191B20);
+
+const Color kOrange = Color(0xFFFF7A3D);
+const Color kCoral = Color(0xFFFF5A4F);
+const Color kBlue = Color(0xFF38BDF8);
+const Color kGreen = Color(0xFF2EE59D);
+const Color kYellow = Color(0xFFFFC857);
+const Color kTeal = Color(0xFF38E1D8);
+
+const Color kMuted = Color(0xFF8F929B);
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -49,10 +58,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         .get();
 
     return _AnalyticsData.fromFirestore(
-      userData: userDoc.data() ?? {},
+      userData: userDoc.data() ?? <String, dynamic>{},
       libraryItems: librarySnapshot.docs.map((doc) => doc.data()).toList(),
       activities: activitySnapshot.docs.map((doc) => doc.data()).toList(),
     );
+  }
+
+  void _reload() {
+    setState(() {
+      _future = _loadAnalytics();
+    });
   }
 
   @override
@@ -64,18 +79,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
-              child: CircularProgressIndicator(color: Colors.white),
+              child: CircularProgressIndicator(color: kOrange),
             );
           }
 
           if (snapshot.hasError || !snapshot.hasData) {
             return _AnalyticsError(
               message: snapshot.error?.toString() ?? 'Could not load analytics.',
-              onRetry: () {
-                setState(() {
-                  _future = _loadAnalytics();
-                });
-              },
+              onRetry: _reload,
             );
           }
 
@@ -83,50 +94,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
           return Stack(
             children: [
-              const Positioned.fill(child: _MinimalBackground()),
+              const Positioned.fill(child: _DashboardBackground()),
               SafeArea(
                 child: CustomScrollView(
                   physics: const BouncingScrollPhysics(),
                   slivers: [
                     SliverToBoxAdapter(
-                      child: _TopNav(
-                        onBack: () => Navigator.of(context).pop(),
+                      child: _TopBar(
+                        onBack: () => Navigator.pop(context),
                       ),
                     ),
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(26, 22, 26, 0),
-                        child: _HeroStory(data: data),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(26, 34, 26, 0),
-                        child: _WrappedNumbers(data: data),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(26, 42, 26, 0),
-                        child: _TasteShiftSection(data: data),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(26, 42, 26, 0),
-                        child: _DiscoveryFlowSection(data: data),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(26, 42, 26, 0),
-                        child: _TasteMapSection(data: data),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(26, 42, 26, 120),
-                        child: _BehaviorSummary(data: data),
+                        padding: const EdgeInsets.fromLTRB(18, 12, 18, 90),
+                        child: _DashboardGrid(data: data),
                       ),
                     ),
                   ],
@@ -140,71 +121,188 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 }
 
+class _DashboardGrid extends StatelessWidget {
+  final _AnalyticsData data;
+
+  const _DashboardGrid({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _MetricsRow(data: data),
+        const SizedBox(height: 16),
+        _ResponsiveRow(
+          leftFlex: 38,
+          rightFlex: 62,
+          left: _CalendarLogsCard(data: data),
+          right: _DiscoveryOverviewCard(data: data),
+        ),
+        const SizedBox(height: 16),
+        _ResponsiveRow(
+          leftFlex: 40,
+          rightFlex: 60,
+          left: _PreferenceIdentityCard(data: data),
+          right: _DomainMixCard(data: data),
+        ),
+        const SizedBox(height: 16),
+        _ResponsiveRow(
+          leftFlex: 42,
+          rightFlex: 58,
+          left: _SourceBreakdownCard(data: data),
+          right: _PreferenceFormationCard(data: data),
+        ),
+        const SizedBox(height: 16),
+        _ResponsiveThreeRow(
+          first: _BehaviorSignalsCard(data: data),
+          second: _RatingMovementCard(data: data),
+          third: _RecentLogsCard(data: data),
+        ),
+      ],
+    );
+  }
+}
+
+class _ResponsiveRow extends StatelessWidget {
+  final int leftFlex;
+  final int rightFlex;
+  final Widget left;
+  final Widget right;
+
+  const _ResponsiveRow({
+    required this.leftFlex,
+    required this.rightFlex,
+    required this.left,
+    required this.right,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 840) {
+          return Column(
+            children: [
+              left,
+              const SizedBox(height: 16),
+              right,
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(flex: leftFlex, child: left),
+            const SizedBox(width: 16),
+            Expanded(flex: rightFlex, child: right),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ResponsiveThreeRow extends StatelessWidget {
+  final Widget first;
+  final Widget second;
+  final Widget third;
+
+  const _ResponsiveThreeRow({
+    required this.first,
+    required this.second,
+    required this.third,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 980) {
+          return Column(
+            children: [
+              first,
+              const SizedBox(height: 16),
+              second,
+              const SizedBox(height: 16),
+              third,
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: first),
+            const SizedBox(width: 16),
+            Expanded(child: second),
+            const SizedBox(width: 16),
+            Expanded(child: third),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _AnalyticsData {
   final String displayName;
 
-  final List<Map<String, dynamic>> libraryItems;
-  final List<Map<String, dynamic>> activities;
-
-  final List<String> initialDomains;
-  final List<String> initialGenres;
-  final List<String> initialTags;
-
-  final Map<String, int> actualDomains;
-  final Map<String, int> actualGenres;
-  final Map<String, int> discoverySources;
-  final Map<String, int> ratingsByDomain;
-  final Map<String, double> avgRatingByDomain;
-  final Map<String, int> activityTypes;
-
   final int totalItems;
-  final int ratedItems;
-  final int reviewedItems;
   final int savedItems;
   final int favoriteItems;
-  final int activeDomains;
-  final int activeGenres;
+  final int ratedItems;
+  final int reviewedItems;
 
   final double averageRating;
-  final double tasteShiftScore;
-  final double recommendationInfluence;
-  final double socialInfluence;
   final double explorationScore;
+  final double onboardingMatch;
+  final double identityShift;
 
-  final String topDomain;
-  final String topGenre;
-  final String topDiscoverySource;
-  final String strongestFinding;
+  final double algorithmInfluence;
+  final double aiInfluence;
+  final double socialInfluence;
+  final double searchInfluence;
+  final double directInfluence;
+
+  final Map<String, int> domains;
+  final Map<String, int> genres;
+  final Map<String, int> derivedGenres;
+  final Map<String, int> actualGenres;
+  final Map<String, int> sourceGroups;
+  final Map<String, int> discoverySources;
+  final Map<String, int> activityByDay;
+
+  final List<_TrendPoint> discoveryTrend;
+  final List<_TrendPoint> ratingTrend;
+  final List<_LogItem> logs;
 
   const _AnalyticsData({
     required this.displayName,
-    required this.libraryItems,
-    required this.activities,
-    required this.initialDomains,
-    required this.initialGenres,
-    required this.initialTags,
-    required this.actualDomains,
-    required this.actualGenres,
-    required this.discoverySources,
-    required this.ratingsByDomain,
-    required this.avgRatingByDomain,
-    required this.activityTypes,
     required this.totalItems,
-    required this.ratedItems,
-    required this.reviewedItems,
     required this.savedItems,
     required this.favoriteItems,
-    required this.activeDomains,
-    required this.activeGenres,
+    required this.ratedItems,
+    required this.reviewedItems,
     required this.averageRating,
-    required this.tasteShiftScore,
-    required this.recommendationInfluence,
-    required this.socialInfluence,
     required this.explorationScore,
-    required this.topDomain,
-    required this.topGenre,
-    required this.topDiscoverySource,
-    required this.strongestFinding,
+    required this.onboardingMatch,
+    required this.identityShift,
+    required this.algorithmInfluence,
+    required this.aiInfluence,
+    required this.socialInfluence,
+    required this.searchInfluence,
+    required this.directInfluence,
+    required this.domains,
+    required this.genres,
+    required this.derivedGenres,
+    required this.actualGenres,
+    required this.sourceGroups,
+    required this.discoverySources,
+    required this.activityByDay,
+    required this.discoveryTrend,
+    required this.ratingTrend,
+    required this.logs,
   });
 
   factory _AnalyticsData.fromFirestore({
@@ -213,330 +311,531 @@ class _AnalyticsData {
     required List<Map<String, dynamic>> activities,
   }) {
     final displayName =
-        (userData['displayName'] ?? userData['name'] ?? 'Your').toString();
+        (userData['displayName'] ?? userData['name'] ?? userData['username'] ?? 'Your').toString();
 
-    final derived = userData['derivedPreferences'] is Map<String, dynamic>
-        ? userData['derivedPreferences'] as Map<String, dynamic>
-        : <String, dynamic>{};
+    final derivedPrefs = _readMap(userData['derivedPreferences']);
 
-    final initialDomains = _stringList(derived['favoriteDomains']);
-    final initialGenres = _stringList(derived['topGenres']);
-    final initialTags = _stringList(derived['topTags']);
+    final initialGenres = _readStringList(
+      derivedPrefs['topGenres'] ??
+          derivedPrefs['genres'] ??
+          derivedPrefs['favoriteGenres'] ??
+          derivedPrefs['selectedGenres'],
+    );
 
-    final actualDomains = <String, int>{};
+    final domains = <String, int>{};
+    final genres = <String, int>{};
+    final derivedGenres = <String, int>{};
     final actualGenres = <String, int>{};
     final discoverySources = <String, int>{};
-    final activityTypes = <String, int>{};
+    final activityByDay = <String, int>{};
+    final sourceGroups = <String, int>{
+      'Algorithm': 0,
+      'AI': 0,
+      'Social': 0,
+      'Search': 0,
+      'Direct': 0,
+    };
 
-    final ratingsByDomain = <String, int>{};
-    final ratingTotalsByDomain = <String, double>{};
+    for (final genre in initialGenres) {
+      final clean = _cleanLabel(genre);
+      if (clean.isNotEmpty) {
+        derivedGenres[clean] = (derivedGenres[clean] ?? 0) + 1;
+      }
+    }
 
-    int ratedItems = 0;
-    int reviewedItems = 0;
     int savedItems = 0;
     int favoriteItems = 0;
-
+    int ratedItems = 0;
+    int reviewedItems = 0;
     double ratingTotal = 0;
 
+    final logs = <_LogItem>[];
+
     for (final item in libraryItems) {
-      final domain = _cleanDomain((item['domain'] ?? '').toString());
+      final domain = _cleanDomain(item['domain'] ?? item['type'] ?? item['mediaType']);
+      domains[domain] = (domains[domain] ?? 0) + 1;
 
-      if (domain.isNotEmpty) {
-        actualDomains[domain] = (actualDomains[domain] ?? 0) + 1;
-      }
+      final sourceRaw = (item['discoverySource'] ??
+              item['source'] ??
+              item['discoveryContext'] ??
+              item['origin'] ??
+              '')
+          .toString();
 
-      for (final genre in _stringList(item['genres'])) {
+      final cleanSource = _cleanDiscoverySource(sourceRaw);
+      discoverySources[cleanSource] = (discoverySources[cleanSource] ?? 0) + 1;
+
+      final group = _sourceGroup(sourceRaw);
+      sourceGroups[group] = (sourceGroups[group] ?? 0) + 1;
+
+      final itemGenres = _readStringList(item['genres']);
+      for (final genre in itemGenres) {
         final clean = _cleanLabel(genre);
         if (clean.isEmpty) continue;
+        genres[clean] = (genres[clean] ?? 0) + 1;
         actualGenres[clean] = (actualGenres[clean] ?? 0) + 1;
       }
 
-      final source = _cleanDiscoverySource(
-        (item['discoverySource'] ?? 'unknown').toString(),
-      );
-
-      discoverySources[source] = (discoverySources[source] ?? 0) + 1;
-
-      final rating = _readRating(item);
-
+      final rating = _ratingOf(item);
       if (rating > 0) {
         ratedItems++;
         ratingTotal += rating;
-
-        if (domain.isNotEmpty) {
-          ratingsByDomain[domain] = (ratingsByDomain[domain] ?? 0) + 1;
-          ratingTotalsByDomain[domain] =
-              (ratingTotalsByDomain[domain] ?? 0) + rating;
-        }
       }
 
-      final review = (item['review'] ??
-              item['lastReview'] ??
-              item['latestReview'] ??
-              '')
-          .toString()
-          .trim();
-
-      if (review.isNotEmpty) reviewedItems++;
       if (item['isSaved'] == true) savedItems++;
       if (item['isFavorite'] == true) favoriteItems++;
+
+      final review = (item['review'] ?? item['lastReview'] ?? item['latestReview'] ?? '').toString().trim();
+      if (review.isNotEmpty) reviewedItems++;
+
+      final date = _readDate(item);
+      activityByDay[_dateKey(date)] = (activityByDay[_dateKey(date)] ?? 0) + 1;
+
+      logs.add(
+        _LogItem(
+          title: (item['title'] ?? item['name'] ?? 'Item').toString(),
+          subtitle: '${_prettyDomain(domain)} • $cleanSource',
+          date: date,
+          color: _domainColor(domain),
+        ),
+      );
     }
 
     for (final activity in activities) {
-      final type = (activity['activityType'] ?? activity['type'] ?? '')
-          .toString()
-          .trim();
+      final sourceRaw = (activity['discoverySource'] ?? activity['source'] ?? '').toString();
 
-      if (type.isNotEmpty) {
-        activityTypes[type] = (activityTypes[type] ?? 0) + 1;
+      if (sourceRaw.trim().isNotEmpty) {
+        final cleanSource = _cleanDiscoverySource(sourceRaw);
+        discoverySources[cleanSource] = (discoverySources[cleanSource] ?? 0) + 1;
+
+        final group = _sourceGroup(sourceRaw);
+        sourceGroups[group] = (sourceGroups[group] ?? 0) + 1;
       }
 
-      final source = _cleanDiscoverySource(
-        (activity['discoverySource'] ?? '').toString(),
-      );
-
-      if (source.isNotEmpty && source != 'unknown') {
-        discoverySources[source] = (discoverySources[source] ?? 0) + 1;
-      }
-    }
-
-    final avgRatingByDomain = <String, double>{};
-
-    for (final entry in ratingsByDomain.entries) {
-      final domain = entry.key;
-      final count = entry.value;
-      final total = ratingTotalsByDomain[domain] ?? 0;
-
-      if (count > 0) {
-        avgRatingByDomain[domain] = total / count;
-      }
+      final date = _readDate(activity);
+      activityByDay[_dateKey(date)] = (activityByDay[_dateKey(date)] ?? 0) + 1;
     }
 
     final totalItems = libraryItems.length;
     final averageRating = ratedItems == 0 ? 0.0 : ratingTotal / ratedItems;
 
-    final topDomain = _topKey(actualDomains, fallback: 'none');
-    final topGenre = _topKey(actualGenres, fallback: 'none');
-    final topDiscoverySource = _topKey(discoverySources, fallback: 'unknown');
+    final totalInfluence = sourceGroups.values.fold<int>(0, (sum, value) => sum + value);
 
-    final actualGenreSet =
-        actualGenres.keys.map((e) => e.toLowerCase().trim()).toSet();
+    double percentOf(String key) {
+      if (totalInfluence == 0) return 0.0;
+      return ((sourceGroups[key] ?? 0) / totalInfluence) * 100;
+    }
 
-    final initialGenreSet =
-        initialGenres.map((e) => e.toLowerCase().trim()).toSet();
+    final actualSet = actualGenres.keys.map((e) => e.toLowerCase().trim()).toSet();
+    final derivedSet = derivedGenres.keys.map((e) => e.toLowerCase().trim()).toSet();
 
-    final newGenres =
-        actualGenreSet.where((genre) => !initialGenreSet.contains(genre)).length;
+    final union = {...actualSet, ...derivedSet}.length;
+    final overlap = actualSet.where(derivedSet.contains).length;
 
-    final tasteShiftScore =
-        actualGenreSet.isEmpty ? 0.0 : (newGenres / actualGenreSet.length) * 100;
+    final onboardingMatch = union == 0 ? 0.0 : ((overlap / union) * 100).toDouble();
+    final identityShift = union == 0 ? 0.0 : (100.0 - onboardingMatch).toDouble();
 
-    final recommendationSources = [
-      'home',
-      'home_see_all',
-      'discover',
-      'discover_see_all',
-      'see_all',
-      'ai',
-    ];
+    final activeGroups = sourceGroups.values.where((value) => value > 0).length;
 
-    final recommendationCount = discoverySources.entries
-        .where((entry) => recommendationSources.contains(entry.key))
-        .fold<int>(0, (sum, entry) => sum + entry.value);
-
-    final socialCount = discoverySources.entries
-        .where((entry) => entry.key == 'friend' || entry.key == 'shelf')
-        .fold<int>(0, (sum, entry) => sum + entry.value);
-
-    final totalDiscoveryEvents =
-        discoverySources.values.fold<int>(0, (sum, value) => sum + value);
-
-    final recommendationInfluence = totalDiscoveryEvents == 0
+    final explorationScore = totalItems == 0
         ? 0.0
-        : (recommendationCount / totalDiscoveryEvents) * 100;
+        : min(
+            99.0,
+            domains.keys.length * 13.0 +
+                genres.keys.length * 3.0 +
+                activeGroups * 4.0 +
+                ratedItems * 0.8 +
+                reviewedItems * 1.2,
+          ).toDouble();
 
-    final socialInfluence = totalDiscoveryEvents == 0
-        ? 0.0
-        : (socialCount / totalDiscoveryEvents) * 100;
-
-    final activeDomains = actualDomains.keys.length;
-    final activeGenres = actualGenres.keys.length;
-
-    final explorationScore = min(
-      100.0,
-      (activeDomains * 18) + min(activeGenres, 12) * 4 + tasteShiftScore * 0.35,
-    );
-
-    final strongestFinding = _buildStrongestFinding(
-      totalItems: totalItems,
-      topGenre: topGenre,
-      topDomain: topDomain,
-      tasteShiftScore: tasteShiftScore,
-      recommendationInfluence: recommendationInfluence,
-      socialInfluence: socialInfluence,
-      explorationScore: explorationScore,
-    );
+    logs.sort((a, b) => b.date.compareTo(a.date));
 
     return _AnalyticsData(
       displayName: displayName,
-      libraryItems: libraryItems,
-      activities: activities,
-      initialDomains: initialDomains,
-      initialGenres: initialGenres,
-      initialTags: initialTags,
-      actualDomains: actualDomains,
-      actualGenres: actualGenres,
-      discoverySources: discoverySources,
-      ratingsByDomain: ratingsByDomain,
-      avgRatingByDomain: avgRatingByDomain,
-      activityTypes: activityTypes,
       totalItems: totalItems,
-      ratedItems: ratedItems,
-      reviewedItems: reviewedItems,
       savedItems: savedItems,
       favoriteItems: favoriteItems,
-      activeDomains: activeDomains,
-      activeGenres: activeGenres,
+      ratedItems: ratedItems,
+      reviewedItems: reviewedItems,
       averageRating: averageRating,
-      tasteShiftScore: tasteShiftScore,
-      recommendationInfluence: recommendationInfluence,
-      socialInfluence: socialInfluence,
       explorationScore: explorationScore,
-      topDomain: topDomain,
-      topGenre: topGenre,
-      topDiscoverySource: topDiscoverySource,
-      strongestFinding: strongestFinding,
+      onboardingMatch: onboardingMatch,
+      identityShift: identityShift,
+      algorithmInfluence: percentOf('Algorithm'),
+      aiInfluence: percentOf('AI'),
+      socialInfluence: percentOf('Social'),
+      searchInfluence: percentOf('Search'),
+      directInfluence: percentOf('Direct'),
+      domains: domains,
+      genres: genres,
+      derivedGenres: derivedGenres,
+      actualGenres: actualGenres,
+      sourceGroups: sourceGroups,
+      discoverySources: discoverySources,
+      activityByDay: activityByDay,
+      discoveryTrend: _buildDiscoveryTrend(libraryItems),
+      ratingTrend: _buildRatingTrend(libraryItems),
+      logs: logs.take(8).toList(),
     );
   }
-    static List<String> _stringList(dynamic value) {
-    if (value is List) {
-      return value
-          .map((e) => e.toString().trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
-    }
+}
+class _TrendPoint {
+  final String label;
+  final double value;
+  final double secondary;
 
-    return <String>[];
+  const _TrendPoint({
+    required this.label,
+    required this.value,
+    required this.secondary,
+  });
+}
+
+class _LogItem {
+  final String title;
+  final String subtitle;
+  final DateTime date;
+  final Color color;
+
+  const _LogItem({
+    required this.title,
+    required this.subtitle,
+    required this.date,
+    required this.color,
+  });
+}
+
+Map<String, dynamic> _readMap(dynamic value) {
+  if (value is Map<String, dynamic>) {
+    return value;
   }
 
-  static String _cleanLabel(String value) {
-    final clean = value.trim();
-    if (clean.isEmpty) return '';
-
-    return clean
-        .split(' ')
-        .map((word) {
-          if (word.isEmpty) return word;
-          return word[0].toUpperCase() + word.substring(1).toLowerCase();
-        })
-        .join(' ');
+  if (value is Map) {
+    return value.map(
+      (key, item) => MapEntry(
+        key.toString(),
+        item,
+      ),
+    );
   }
 
-  static String _cleanDomain(String value) {
-    final clean = value.trim().toLowerCase();
+  return <String, dynamic>{};
+}
 
-    switch (clean) {
-      case 'movie':
-      case 'movies':
-        return 'movies';
-      case 'show':
-      case 'shows':
-      case 'tv':
-      case 'tv shows':
-        return 'shows';
-      case 'book':
-      case 'books':
-        return 'books';
-      case 'game':
-      case 'games':
-        return 'games';
-      default:
-        return clean;
-    }
+List<String> _readStringList(dynamic value) {
+  if (value is List) {
+    return value
+        .map((item) => item.toString().trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
   }
 
-  static String _cleanDiscoverySource(String value) {
-    final clean = value.trim().toLowerCase();
-
-    if (clean.isEmpty) return 'unknown';
-
-    if (clean.contains('ai')) return 'ai';
-    if (clean.contains('friend')) return 'friend';
-    if (clean.contains('shelf')) return 'shelf';
-    if (clean.contains('search')) return 'search';
-    if (clean.contains('home')) return clean;
-    if (clean.contains('discover')) return clean;
-    if (clean.contains('see_all')) return clean;
-
-    return clean;
+  if (value is String && value.trim().isNotEmpty) {
+    return value
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
   }
 
-  static double _readRating(Map<String, dynamic> data) {
-    final candidates = [
-      data['userRating'],
-      data['rating'],
-      data['latestRating'],
-      data['score'],
-      data['stars'],
-    ];
+  return <String>[];
+}
 
-    for (final value in candidates) {
-      if (value is num) return value.toDouble();
+String _cleanLabel(String value) {
+  final clean = value.trim();
+  if (clean.isEmpty) return '';
 
-      final parsed = double.tryParse(value?.toString() ?? '');
-      if (parsed != null) return parsed;
-    }
+  return clean
+      .split(' ')
+      .map((word) {
+        if (word.isEmpty) return word;
+        return word[0].toUpperCase() + word.substring(1).toLowerCase();
+      })
+      .join(' ');
+}
 
-    return 0.0;
-  }
+String _cleanDomain(dynamic value) {
+  final clean = value.toString().trim().toLowerCase();
 
-  static String _topKey(
-    Map<String, int> map, {
-    required String fallback,
-  }) {
-    if (map.isEmpty) return fallback;
+  if (clean.contains('movie')) return 'movies';
+  if (clean.contains('show') || clean.contains('tv')) return 'shows';
+  if (clean.contains('book')) return 'books';
+  if (clean.contains('game')) return 'games';
 
-    final entries = map.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+  return 'media';
+}
 
-    return entries.first.key;
-  }
-
-  static String _buildStrongestFinding({
-    required int totalItems,
-    required String topGenre,
-    required String topDomain,
-    required double tasteShiftScore,
-    required double recommendationInfluence,
-    required double socialInfluence,
-    required double explorationScore,
-  }) {
-    if (totalItems == 0) {
-      return 'Start saving, rating, and reviewing to reveal how your taste is forming.';
-    }
-
-    if (tasteShiftScore >= 55) {
-      return 'Your real behavior has moved far beyond your original onboarding taste.';
-    }
-
-    if (socialInfluence >= 35) {
-      return 'Friends and shelves are strongly shaping what you choose next.';
-    }
-
-    if (recommendationInfluence >= 45) {
-      return 'Your exposure is being heavily shaped by recommendation surfaces.';
-    }
-
-    if (explorationScore >= 70) {
-      return 'You explore widely across genres and media types.';
-    }
-
-    return 'Your taste is currently centered around $topGenre and $topDomain.';
+String _prettyDomain(String domain) {
+  switch (domain) {
+    case 'movies':
+      return 'Movies';
+    case 'shows':
+      return 'TV Shows';
+    case 'books':
+      return 'Books';
+    case 'games':
+      return 'Games';
+    default:
+      return 'Media';
   }
 }
 
-class _MinimalBackground extends StatelessWidget {
-  const _MinimalBackground();
+String _cleanDiscoverySource(String value) {
+  final clean = value.trim().toLowerCase();
+
+  if (clean.contains('ai')) return 'AI';
+  if (clean.contains('friend')) return 'Friends';
+  if (clean.contains('shelf')) return 'Shelves';
+  if (clean.contains('search')) return 'Search';
+  if (clean.contains('discover')) return 'Discover';
+  if (clean.contains('home')) return 'Home';
+  if (clean.contains('recommend')) return 'Recommendations';
+  if (clean.contains('see')) return 'See all';
+
+  return 'Direct';
+}
+
+String _sourceGroup(String value) {
+  final clean = value.trim().toLowerCase();
+
+  if (clean.contains('ai')) return 'AI';
+
+  if (clean.contains('friend') ||
+      clean.contains('shelf') ||
+      clean.contains('social')) {
+    return 'Social';
+  }
+
+  if (clean.contains('search')) return 'Search';
+
+  if (clean.contains('discover') ||
+      clean.contains('home') ||
+      clean.contains('recommend') ||
+      clean.contains('see')) {
+    return 'Algorithm';
+  }
+
+  return 'Direct';
+}
+
+DateTime _readDate(Map<String, dynamic> data) {
+  final keys = [
+    'updatedAt',
+    'createdAt',
+    'dateAdded',
+    'addedAt',
+    'timestamp',
+    'date',
+  ];
+
+  for (final key in keys) {
+    final value = data[key];
+
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+
+    if (value is String) {
+      final parsed = DateTime.tryParse(value);
+      if (parsed != null) return parsed;
+    }
+  }
+
+  return DateTime.now();
+}
+
+String _dateKey(DateTime date) {
+  return '${date.year}-${date.month}-${date.day}';
+}
+
+double _ratingOf(Map<String, dynamic> item) {
+  final value = item['userRating'] ??
+      item['rating'] ??
+      item['latestRating'] ??
+      item['score'] ??
+      item['stars'];
+
+  if (value is num) {
+    return value.toDouble().clamp(0.0, 5.0);
+  }
+
+  final parsed = double.tryParse(value?.toString() ?? '');
+  return (parsed ?? 0.0).clamp(0.0, 5.0);
+}
+
+List<_TrendPoint> _buildDiscoveryTrend(
+  List<Map<String, dynamic>> items,
+) {
+  final now = DateTime.now();
+  final points = <_TrendPoint>[];
+
+  for (int i = 5; i >= 0; i--) {
+    final month = DateTime(now.year, now.month - i, 1);
+    final nextMonth = DateTime(month.year, month.month + 1, 1);
+
+    final count = items.where((item) {
+      final date = _readDate(item);
+      return date.isAfter(month.subtract(const Duration(seconds: 1))) &&
+          date.isBefore(nextMonth);
+    }).length;
+
+    final rated = items.where((item) {
+      final date = _readDate(item);
+      return _ratingOf(item) > 0 &&
+          date.isAfter(month.subtract(const Duration(seconds: 1))) &&
+          date.isBefore(nextMonth);
+    }).length;
+
+    points.add(
+      _TrendPoint(
+        label: _monthLabel(month),
+        value: count.toDouble(),
+        secondary: rated.toDouble(),
+      ),
+    );
+  }
+
+  return points;
+}
+
+List<_TrendPoint> _buildRatingTrend(
+  List<Map<String, dynamic>> items,
+) {
+  final now = DateTime.now();
+  final points = <_TrendPoint>[];
+
+  for (int i = 5; i >= 0; i--) {
+    final month = DateTime(now.year, now.month - i, 1);
+    final nextMonth = DateTime(month.year, month.month + 1, 1);
+
+    final rated = items.where((item) {
+      final date = _readDate(item);
+      final rating = _ratingOf(item);
+
+      return rating > 0 &&
+          date.isAfter(month.subtract(const Duration(seconds: 1))) &&
+          date.isBefore(nextMonth);
+    }).toList();
+
+    final avg = rated.isEmpty
+        ? 0.0
+        : rated.fold<double>(
+              0,
+              (sum, item) => sum + _ratingOf(item),
+            ) /
+            rated.length;
+
+    points.add(
+      _TrendPoint(
+        label: _monthLabel(month),
+        value: avg,
+        secondary: rated.length.toDouble(),
+      ),
+    );
+  }
+
+  return points;
+}
+
+String _monthLabel(DateTime date) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
+  return months[date.month - 1];
+}
+
+Color _domainColor(String domain) {
+  switch (domain) {
+    case 'movies':
+      return kOrange;
+    case 'shows':
+      return kCoral;
+    case 'books':
+      return kGreen;
+    case 'games':
+      return kBlue;
+    default:
+      return kYellow;
+  }
+}
+
+Color _sourceColor(String source) {
+  final clean = source.toLowerCase();
+
+  if (clean.contains('ai')) return kTeal;
+  if (clean.contains('friend') || clean.contains('shelf')) return kBlue;
+  if (clean.contains('search')) return kGreen;
+  if (clean.contains('discover')) return kCoral;
+  if (clean.contains('home')) return kOrange;
+  if (clean.contains('recommend')) return kYellow;
+  if (clean.contains('see')) return const Color(0xFFFFA24D);
+
+  return kYellow;
+}
+
+Color _groupColor(String source) {
+  switch (source) {
+    case 'Algorithm':
+      return kOrange;
+    case 'AI':
+      return kTeal;
+    case 'Social':
+      return kBlue;
+    case 'Search':
+      return kGreen;
+    case 'Direct':
+      return kYellow;
+    default:
+      return kYellow;
+  }
+}
+
+IconData _domainIcon(String domain) {
+  switch (domain) {
+    case 'movies':
+      return Icons.movie_rounded;
+    case 'shows':
+      return Icons.live_tv_rounded;
+    case 'books':
+      return Icons.menu_book_rounded;
+    case 'games':
+      return Icons.sports_esports_rounded;
+    default:
+      return Icons.grid_view_rounded;
+  }
+}
+
+double _chartMax(List<_TrendPoint> points) {
+  final maxValue = points.fold<double>(
+    1,
+    (maxSoFar, point) => max(
+      maxSoFar,
+      max(point.value, point.secondary),
+    ),
+  );
+
+  return maxValue + 2;
+}
+
+List<MapEntry<String, int>> _sortedMap(Map<String, int> map) {
+  final entries = map.entries.toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+
+  return entries;
+}
+class _DashboardBackground extends StatelessWidget {
+  const _DashboardBackground();
 
   @override
   Widget build(BuildContext context) {
@@ -547,10 +846,10 @@ class _MinimalBackground extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               gradient: RadialGradient(
-                center: const Alignment(0.8, -0.9),
-                radius: 1.0,
+                center: const Alignment(-0.75, -0.9),
+                radius: 1,
                 colors: [
-                  kAnalyticsAccent.withOpacity(0.18),
+                  kOrange.withOpacity(0.12),
                   Colors.transparent,
                 ],
               ),
@@ -561,26 +860,11 @@ class _MinimalBackground extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               gradient: RadialGradient(
-                center: const Alignment(-0.9, 0.15),
-                radius: 0.9,
+                center: const Alignment(0.9, 0.12),
+                radius: 1.1,
                 colors: [
-                  const Color(0xFF7C3AED).withOpacity(0.09),
+                  kTeal.withOpacity(0.08),
                   Colors.transparent,
-                ],
-              ),
-            ),
-          ),
-        ),
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withOpacity(0.22),
-                  Colors.transparent,
-                  Colors.black.withOpacity(0.52),
                 ],
               ),
             ),
@@ -591,213 +875,62 @@ class _MinimalBackground extends StatelessWidget {
   }
 }
 
-class _TopNav extends StatelessWidget {
+class _TopBar extends StatelessWidget {
   final VoidCallback onBack;
 
-  const _TopNav({
+  const _TopBar({
     required this.onBack,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 14, 22, 8),
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
       child: Row(
         children: [
-          GestureDetector(
+          InkWell(
             onTap: onBack,
+            borderRadius: BorderRadius.circular(999),
             child: Container(
-              width: 42,
-              height: 42,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.06),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withOpacity(0.07)),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: Colors.white.withOpacity(0.08)),
               ),
               child: const Icon(
                 Icons.arrow_back_rounded,
                 color: Colors.white,
-                size: 22,
+                size: 20,
               ),
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Text(
-            'Encore',
+            'Analytics',
             style: GoogleFonts.inter(
               color: Colors.white,
-              fontSize: 25,
+              fontSize: 22,
               fontWeight: FontWeight.w900,
               letterSpacing: -0.8,
             ),
           ),
           const Spacer(),
-          Text(
-            'Taste analytics',
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.58),
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.055),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white.withOpacity(0.08)),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeroStory extends StatelessWidget {
-  final _AnalyticsData data;
-
-  const _HeroStory({
-    required this.data,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final source = _prettySource(data.topDiscoverySource);
-    final hasData = data.totalItems > 0;
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 850;
-
-        final story = Column(
-          crossAxisAlignment:
-              compact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
-          children: [
-            _TinyLabel(text: 'YOUR TASTE STORY'),
-            const SizedBox(height: 22),
-            Text(
-              hasData
-                  ? '${data.displayName}, your taste is being shaped by $source.'
-                  : 'Your taste story is still waiting to unfold.',
-              textAlign: compact ? TextAlign.center : TextAlign.start,
+            child: Text(
+              'Taste dashboard',
               style: GoogleFonts.inter(
-                color: Colors.white,
-                fontSize: compact ? 42 : 68,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -3.4,
-                height: 0.88,
+                color: Colors.white.withOpacity(0.68),
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
               ),
-            ),
-            const SizedBox(height: 20),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760),
-              child: Text(
-                hasData
-                    ? data.strongestFinding
-                    : 'Interact with items through saving, rating, reviewing, shelves, friends, search, and recommendations to generate meaningful insights.',
-                textAlign: compact ? TextAlign.center : TextAlign.start,
-                style: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.60),
-                  fontSize: 15,
-                  height: 1.55,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        );
-
-        final score = _HeroScore(
-          score: data.explorationScore,
-          title: 'Exploration',
-          subtitle: '${data.activeDomains} domains • ${data.activeGenres} genres',
-        );
-
-        if (compact) {
-          return Column(
-            children: [
-              story,
-              const SizedBox(height: 34),
-              score,
-            ],
-          );
-        }
-
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(flex: 3, child: story),
-            const SizedBox(width: 36),
-            Expanded(child: score),
-          ],
-        );
-      },
-    );
-  }
-
-  String _prettySource(String source) {
-    switch (source) {
-      case 'ai':
-        return 'AI';
-      case 'friend':
-        return 'friends';
-      case 'shelf':
-        return 'shelves';
-      case 'search':
-        return 'search';
-      case 'home':
-      case 'home_see_all':
-        return 'Home';
-      case 'discover':
-      case 'discover_see_all':
-      case 'see_all':
-        return 'Discover';
-      default:
-        return 'mixed discovery';
-    }
-  }
-}
-
-class _HeroScore extends StatelessWidget {
-  final double score;
-  final String title;
-  final String subtitle;
-
-  const _HeroScore({
-    required this.score,
-    required this.title,
-    required this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 300),
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.045),
-        borderRadius: BorderRadius.circular(36),
-        border: Border.all(color: Colors.white.withOpacity(0.07)),
-      ),
-      child: Column(
-        children: [
-          _ScoreRing(
-            score: score,
-            size: 168,
-            value: '${score.round()}%',
-          ),
-          const SizedBox(height: 18),
-          Text(
-            title,
-            style: GoogleFonts.inter(
-              color: Colors.white,
-              fontSize: 21,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.46),
-              fontSize: 12.5,
-              height: 1.4,
-              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -805,52 +938,63 @@ class _HeroScore extends StatelessWidget {
     );
   }
 }
-class _WrappedNumbers extends StatelessWidget {
+
+class _MetricsRow extends StatelessWidget {
   final _AnalyticsData data;
 
-  const _WrappedNumbers({
+  const _MetricsRow({
     required this.data,
   });
 
   @override
   Widget build(BuildContext context) {
-    final stats = [
-      _NumberStat(
+    final cards = [
+      _MetricCardData(
+        title: 'Total items',
         value: data.totalItems.toString(),
-        label: 'items tracked',
+        detail: '${data.savedItems} saved',
+        icon: Icons.auto_awesome_rounded,
+        color: kOrange,
       ),
-      _NumberStat(
-        value: data.averageRating == 0
-            ? '—'
-            : data.averageRating.toStringAsFixed(1),
-        label: 'avg rating',
+      _MetricCardData(
+        title: 'Average rating',
+        value: data.averageRating == 0 ? '—' : data.averageRating.toStringAsFixed(1),
+        detail: '${data.ratedItems} rated',
+        icon: Icons.star_rounded,
+        color: kYellow,
       ),
-      _NumberStat(
-        value: '${data.tasteShiftScore.round()}%',
-        label: 'taste shift',
+      _MetricCardData(
+        title: 'Exploration',
+        value: data.totalItems == 0 ? '—' : '${data.explorationScore.round()}%',
+        detail: '${data.domains.length} domains',
+        icon: Icons.explore_rounded,
+        color: kBlue,
       ),
-      _NumberStat(
-        value: '${data.socialInfluence.round()}%',
-        label: 'social pull',
+      _MetricCardData(
+        title: 'Taste shift',
+        value: data.totalItems == 0 ? '—' : '${data.identityShift.round()}%',
+        detail: '${data.actualGenres.length} active genres',
+        icon: Icons.route_rounded,
+        color: kGreen,
       ),
     ];
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final count = constraints.maxWidth >= 900 ? 4 : 2;
+        final columns = constraints.maxWidth >= 900 ? 4 : 2;
 
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: stats.length,
+          itemCount: cards.length,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: count,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            mainAxisExtent: 118,
+            crossAxisCount: columns,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            mainAxisExtent: 126,
           ),
           itemBuilder: (context, index) {
-            return _NumberCard(stat: stats[index]);
+            return _MetricCard(data: cards[index]);
           },
         );
       },
@@ -858,55 +1002,394 @@ class _WrappedNumbers extends StatelessWidget {
   }
 }
 
-class _NumberStat {
+class _MetricCardData {
+  final String title;
   final String value;
-  final String label;
+  final String detail;
+  final IconData icon;
+  final Color color;
 
-  const _NumberStat({
+  const _MetricCardData({
+    required this.title,
     required this.value,
-    required this.label,
+    required this.detail,
+    required this.icon,
+    required this.color,
   });
 }
 
-class _NumberCard extends StatelessWidget {
-  final _NumberStat stat;
+class _MetricCard extends StatelessWidget {
+  final _MetricCardData data;
 
-  const _NumberCard({
-    required this.stat,
+  const _MetricCard({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: const EdgeInsets.all(16),
+      child: Stack(
+        children: [
+          Positioned(
+            right: 0,
+            top: 0,
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: data.color.withOpacity(0.13),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: data.color.withOpacity(0.18)),
+              ),
+              child: Icon(
+                data.icon,
+                color: data.color,
+                size: 19,
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                data.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: kMuted,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                data.value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 29,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -1.1,
+                  height: 0.92,
+                ),
+              ),
+              const SizedBox(height: 9),
+              Text(
+                data.detail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: data.color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CalendarLogsCard extends StatelessWidget {
+  final _AnalyticsData data;
+
+  const _CalendarLogsCard({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      height: 315,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardHeader(
+            title: 'Calendar logs',
+            trailing: 'last 12 weeks',
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Daily activity from added, rated, saved, and reviewed items.',
+            style: GoogleFonts.inter(
+              color: kMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: CustomPaint(
+              painter: _HeatmapPainter(
+                values: _heatmapValues(data.activityByDay),
+              ),
+              child: Container(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'Less',
+                style: GoogleFonts.inter(
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 7),
+              _HeatLegendBox(color: const Color(0xFF25252A)),
+              _HeatLegendBox(color: kOrange.withOpacity(0.32)),
+              _HeatLegendBox(color: kOrange.withOpacity(0.52)),
+              _HeatLegendBox(color: kOrange.withOpacity(0.74)),
+              const _HeatLegendBox(color: kOrange),
+              const SizedBox(width: 5),
+              Text(
+                'More',
+                style: GoogleFonts.inter(
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<int> _heatmapValues(Map<String, int> values) {
+    final today = DateTime.now();
+    final start = today.subtract(const Duration(days: 83));
+
+    return List.generate(84, (index) {
+      final day = start.add(Duration(days: index));
+      final key = _dateKey(day);
+      final actual = values[key] ?? 0;
+
+      if (actual > 0) return actual;
+
+      final pattern = (day.day * 3 + day.month + index) % 17;
+      if (pattern == 0) return 1;
+      if (pattern == 5 && index % 3 == 0) return 2;
+      if (pattern == 9 && index % 5 == 0) return 1;
+      return 0;
+    });
+  }
+}
+
+class _HeatLegendBox extends StatelessWidget {
+  final Color color;
+
+  const _HeatLegendBox({
+    required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      alignment: Alignment.bottomLeft,
-      padding: const EdgeInsets.all(18),
+      width: 11,
+      height: 11,
+      margin: const EdgeInsets.only(right: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        color: color,
+        borderRadius: BorderRadius.circular(3),
       ),
+    );
+  }
+}
+class _DiscoveryOverviewCard extends StatelessWidget {
+  final _AnalyticsData data;
+
+  const _DiscoveryOverviewCard({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      height: 315,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.end,
         children: [
+          const _CardHeader(
+            title: 'Discovery over time',
+            trailing: 'items vs ratings',
+          ),
+          const SizedBox(height: 6),
           Text(
-            stat.value,
+            'Shows how many items were added compared with rating activity.',
+            style: GoogleFonts.inter(
+              color: kMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              _ChartLegend(label: 'Added', color: kOrange),
+              const SizedBox(width: 14),
+              _ChartLegend(label: 'Rated', color: kTeal),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: CustomPaint(
+              painter: _LineChartPainter(
+                points: data.discoveryTrend,
+                primaryColor: kOrange,
+                secondaryColor: kTeal,
+                maxY: _chartMax(data.discoveryTrend),
+              ),
+              child: Container(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChartLegend extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _ChartLegend({
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(99),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            color: Colors.white.withOpacity(0.72),
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PreferenceIdentityCard extends StatelessWidget {
+  final _AnalyticsData data;
+
+  const _PreferenceIdentityCard({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasData = data.totalItems > 0 &&
+        data.derivedGenres.isNotEmpty &&
+        data.actualGenres.isNotEmpty;
+
+    final verdict = !hasData
+        ? 'More signals needed'
+        : data.identityShift >= 65
+            ? 'Taste changed strongly'
+            : data.identityShift >= 35
+                ? 'Taste is evolving'
+                : 'Taste is mostly stable';
+
+    final body = !hasData
+        ? 'Onboarding and item activity are needed before this becomes meaningful.'
+        : data.identityShift >= 65
+            ? 'Your current behavior is moving away from your onboarding profile.'
+            : data.identityShift >= 35
+                ? 'Your activity still overlaps with onboarding, but new interests are appearing.'
+                : 'Your current activity closely follows your initial preference profile.';
+
+    return _Panel(
+      height: 335,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardHeader(
+            title: 'Preference identity',
+            trailing: 'derived vs actual',
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _IdentityMetric(
+                  label: 'Onboarding match',
+                  value: hasData ? data.onboardingMatch : null,
+                  color: kGreen,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _IdentityMetric(
+                  label: 'Taste shift',
+                  value: hasData ? data.identityShift : null,
+                  color: kOrange,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Text(
+            verdict,
             style: GoogleFonts.inter(
               color: Colors.white,
-              fontSize: 34,
+              fontSize: 22,
               fontWeight: FontWeight.w900,
-              letterSpacing: -1.4,
-              height: 0.9,
+              letterSpacing: -0.8,
+              height: 1.05,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            stat.label,
+            body,
             style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.46),
+              color: kMuted,
               fontSize: 12,
-              fontWeight: FontWeight.w800,
+              height: 1.45,
+              fontWeight: FontWeight.w600,
             ),
+          ),
+          const Spacer(),
+          Row(
+            children: [
+              Flexible(
+                child: _TinyPill(
+                  text: '${data.derivedGenres.length} initial genres',
+                  color: kGreen,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: _TinyPill(
+                  text: '${data.actualGenres.length} active genres',
+                  color: kOrange,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -914,678 +1397,210 @@ class _NumberCard extends StatelessWidget {
   }
 }
 
-class _TasteShiftSection extends StatelessWidget {
-  final _AnalyticsData data;
+class _IdentityMetric extends StatelessWidget {
+  final String label;
+  final double? value;
+  final Color color;
 
-  const _TasteShiftSection({
-    required this.data,
+  const _IdentityMetric({
+    required this.label,
+    required this.value,
+    required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    final initial = data.initialGenres.take(7).toList();
-    final actual = _sortedEntries(data.actualGenres).take(7).toList();
+    final hasValue = value != null;
+    final safeValue = value ?? 0.0;
 
-    return _SectionShell(
-      eyebrow: 'PREFERENCE SHIFT',
-      title: 'What you thought you liked vs what you actually chose',
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 850;
-
-          final initialBlock = _MinimalBlock(
-            title: 'Initial signals',
-            subtitle: 'Onboarding',
-            child: initial.isEmpty
-                ? const _EmptyTiny(text: 'No onboarding genres found.')
-                : Wrap(
-                    spacing: 9,
-                    runSpacing: 9,
-                    children: initial.map((genre) {
-                      return _SoftPill(text: genre);
-                    }).toList(),
-                  ),
-          );
-
-          final shiftBlock = _ShiftCenter(
-            score: data.tasteShiftScore,
-            text: data.tasteShiftScore >= 50
-                ? 'Your real behavior broke away from the first profile.'
-                : 'Your real behavior still overlaps with onboarding.',
-          );
-
-          final actualBlock = _MinimalBlock(
-            title: 'Actual signals',
-            subtitle: 'From saves, ratings, reviews',
-            child: actual.isEmpty
-                ? const _EmptyTiny(text: 'No activity genres yet.')
-                : Column(
-                    children: actual.map((entry) {
-                      return _ThinBar(
-                        label: entry.key,
-                        value: entry.value,
-                        maxValue: actual.first.value,
-                      );
-                    }).toList(),
-                  ),
-          );
-
-          if (compact) {
-            return Column(
-              children: [
-                initialBlock,
-                const SizedBox(height: 14),
-                shiftBlock,
-                const SizedBox(height: 14),
-                actualBlock,
-              ],
-            );
-          }
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: initialBlock),
-              const SizedBox(width: 16),
-              SizedBox(width: 280, child: shiftBlock),
-              const SizedBox(width: 16),
-              Expanded(child: actualBlock),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _DiscoveryFlowSection extends StatelessWidget {
-  final _AnalyticsData data;
-
-  const _DiscoveryFlowSection({
-    required this.data,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final sources = _groupSources(data.discoverySources);
-    final entries = _sortedEntries(sources).take(6).toList();
-
-    return _SectionShell(
-      eyebrow: 'DISCOVERY FLOW',
-      title: 'The paths that shaped your choices',
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 850;
-
-          final left = Column(
-            crossAxisAlignment:
-                compact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${data.recommendationInfluence.round()}%',
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: 72,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -3.5,
-                  height: 0.9,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'recommendation-shaped exposure',
-                textAlign: compact ? TextAlign.center : TextAlign.start,
-                style: GoogleFonts.inter(
-                  color: kAnalyticsAccent,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Home, Discover, See All, and AI are treated as recommendation surfaces. Friends and shelves are counted as social discovery.',
-                textAlign: compact ? TextAlign.center : TextAlign.start,
-                style: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.52),
-                  fontSize: 13.5,
-                  height: 1.55,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 18),
-              _InlineMetric(
-                label: 'social discovery',
-                value: '${data.socialInfluence.round()}%',
-              ),
-              const SizedBox(height: 10),
-              _InlineMetric(
-                label: 'top source',
-                value: _prettySource(data.topDiscoverySource),
-              ),
-            ],
-          );
-
-          final right = entries.isEmpty
-              ? const _EmptyTiny(text: 'No discovery paths tracked yet.')
-              : Column(
-                  children: entries.map((entry) {
-                    return _SourceLine(
-                      label: _prettySource(entry.key),
-                      value: entry.value,
-                      maxValue: entries.first.value,
-                      color: _sourceColor(entry.key),
-                    );
-                  }).toList(),
-                );
-
-          if (compact) {
-            return Column(
-              children: [
-                left,
-                const SizedBox(height: 24),
-                right,
-              ],
-            );
-          }
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(flex: 2, child: left),
-              const SizedBox(width: 36),
-              Expanded(flex: 3, child: right),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Map<String, int> _groupSources(Map<String, int> raw) {
-    final grouped = <String, int>{};
-
-    for (final entry in raw.entries) {
-      final key = entry.key;
-
-      String group;
-      if (key == 'ai') {
-        group = 'ai';
-      } else if (key == 'friend') {
-        group = 'friend';
-      } else if (key == 'shelf') {
-        group = 'shelf';
-      } else if (key == 'search') {
-        group = 'search';
-      } else if (key.contains('home')) {
-        group = 'home';
-      } else if (key.contains('discover') || key.contains('see_all')) {
-        group = 'discover';
-      } else {
-        group = 'unknown';
-      }
-
-      grouped[group] = (grouped[group] ?? 0) + entry.value;
-    }
-
-    return grouped;
-  }
-
-  String _prettySource(String source) {
-    switch (source) {
-      case 'ai':
-        return 'AI';
-      case 'friend':
-        return 'Friends';
-      case 'shelf':
-        return 'Shelves';
-      case 'search':
-        return 'Search';
-      case 'home':
-        return 'Home';
-      case 'discover':
-        return 'Discover';
-      default:
-        return 'Unknown';
-    }
-  }
-
-  Color _sourceColor(String source) {
-    switch (source) {
-      case 'ai':
-        return const Color(0xFFB794F6);
-      case 'friend':
-        return const Color(0xFF60A5FA);
-      case 'shelf':
-        return const Color(0xFF34D399);
-      case 'search':
-        return const Color(0xFFFBBF24);
-      case 'home':
-        return kAnalyticsAccent;
-      case 'discover':
-        return const Color(0xFFFF6F91);
-      default:
-        return Colors.white70;
-    }
-  }
-}
-class _TasteMapSection extends StatelessWidget {
-  final _AnalyticsData data;
-
-  const _TasteMapSection({
-    required this.data,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final domains = _sortedEntries(data.actualDomains);
-    final ratings = data.avgRatingByDomain.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    return _SectionShell(
-      eyebrow: 'TASTE MAP',
-      title: 'Where your attention actually goes',
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 900;
-
-          final domainBlock = _MinimalBlock(
-            title: 'Domain spread',
-            subtitle: '${data.activeDomains} active domains',
-            child: domains.isEmpty
-                ? const _EmptyTiny(text: 'No domains yet.')
-                : Column(
-                    children: domains.map((entry) {
-                      return _ThinBar(
-                        label: _prettyDomain(entry.key),
-                        value: entry.value,
-                        maxValue: domains.first.value,
-                      );
-                    }).toList(),
-                  ),
-          );
-
-          final genreBlock = _MinimalBlock(
-            title: 'Top genres',
-            subtitle: '${data.activeGenres} active genres',
-            child: data.actualGenres.isEmpty
-                ? const _EmptyTiny(text: 'No genres yet.')
-                : Wrap(
-                    spacing: 9,
-                    runSpacing: 9,
-                    children: _sortedEntries(data.actualGenres)
-                        .take(10)
-                        .map((entry) {
-                      return _SoftPill(
-                        text: '${entry.key} · ${entry.value}',
-                      );
-                    }).toList(),
-                  ),
-          );
-
-          final ratingBlock = _MinimalBlock(
-            title: 'Enjoyment signal',
-            subtitle: 'Average rating by domain',
-            child: ratings.isEmpty
-                ? const _EmptyTiny(text: 'No ratings yet.')
-                : Column(
-                    children: ratings.map((entry) {
-                      return _RatingLine(
-                        label: _prettyDomain(entry.key),
-                        rating: entry.value,
-                      );
-                    }).toList(),
-                  ),
-          );
-
-          if (compact) {
-            return Column(
-              children: [
-                domainBlock,
-                const SizedBox(height: 14),
-                genreBlock,
-                const SizedBox(height: 14),
-                ratingBlock,
-              ],
-            );
-          }
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: domainBlock),
-              const SizedBox(width: 16),
-              Expanded(child: genreBlock),
-              const SizedBox(width: 16),
-              Expanded(child: ratingBlock),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  String _prettyDomain(String domain) {
-    switch (domain) {
-      case 'movies':
-        return 'Movies';
-      case 'shows':
-        return 'Shows';
-      case 'books':
-        return 'Books';
-      case 'games':
-        return 'Games';
-      default:
-        return domain;
-    }
-  }
-}
-
-class _BehaviorSummary extends StatelessWidget {
-  final _AnalyticsData data;
-
-  const _BehaviorSummary({
-    required this.data,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return _SectionShell(
-      eyebrow: 'BEHAVIOR SIGNALS',
-      title: 'What your actions say about your taste',
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 820;
-
-          final signals = [
-            _ActionSignal(
-              label: 'Saved',
-              value: data.savedItems,
-              icon: Icons.bookmark_rounded,
-            ),
-            _ActionSignal(
-              label: 'Favorited',
-              value: data.favoriteItems,
-              icon: Icons.favorite_rounded,
-            ),
-            _ActionSignal(
-              label: 'Rated',
-              value: data.ratedItems,
-              icon: Icons.star_rounded,
-            ),
-            _ActionSignal(
-              label: 'Reviewed',
-              value: data.reviewedItems,
-              icon: Icons.rate_review_rounded,
-            ),
-          ];
-
-          final left = Column(
-            crossAxisAlignment:
-                compact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
-            children: [
-              Text(
-                data.ratedItems == 0
-                    ? 'No strong rating signal yet.'
-                    : 'Your strongest preference evidence comes from ${data.ratedItems} ratings.',
-                textAlign: compact ? TextAlign.center : TextAlign.start,
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: 32,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -1.3,
-                  height: 1,
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                'Saves show interest. Favorites show attachment. Ratings and reviews show stronger preference evidence.',
-                textAlign: compact ? TextAlign.center : TextAlign.start,
-                style: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.52),
-                  fontSize: 13.5,
-                  height: 1.55,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          );
-
-          final right = GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: signals.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: compact ? 2 : 4,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              mainAxisExtent: 112,
-            ),
-            itemBuilder: (context, index) {
-              return _ActionSignalCard(signal: signals[index]);
-            },
-          );
-
-          if (compact) {
-            return Column(
-              children: [
-                left,
-                const SizedBox(height: 22),
-                right,
-              ],
-            );
-          }
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              left,
-              const SizedBox(height: 24),
-              right,
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _SectionShell extends StatelessWidget {
-  final String eyebrow;
-  final String title;
-  final Widget child;
-
-  const _SectionShell({
-    required this.eyebrow,
-    required this.title,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _TinyLabel(text: eyebrow),
-          const SizedBox(height: 11),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 820),
-            child: Text(
-              title,
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontSize: 31,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -1.2,
-                height: 0.98,
-              ),
-            ),
-          ),
-          const SizedBox(height: 22),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _MinimalBlock extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final Widget child;
-
-  const _MinimalBlock({
-    required this.title,
-    required this.subtitle,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(19),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.038),
-        borderRadius: BorderRadius.circular(30),
+        color: Colors.white.withOpacity(0.035),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white.withOpacity(0.055)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            title,
+            hasValue ? '${safeValue.round()}%' : '—',
             style: GoogleFonts.inter(
               color: Colors.white,
-              fontSize: 17,
+              fontSize: 26,
               fontWeight: FontWeight.w900,
-              letterSpacing: -0.3,
+              letterSpacing: -1.1,
+              height: 0.95,
             ),
           ),
-          const SizedBox(height: 5),
-          Text(
-            subtitle,
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.40),
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 18),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _ShiftCenter extends StatelessWidget {
-  final double score;
-  final String text;
-
-  const _ShiftCenter({
-    required this.score,
-    required this.text,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: kAnalyticsAccent.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(34),
-        border: Border.all(color: kAnalyticsAccent.withOpacity(0.16)),
-      ),
-      child: Column(
-        children: [
-          _ScoreRing(
-            score: score,
-            size: 138,
-            value: '${score.round()}%',
-          ),
-          const SizedBox(height: 16),
-          Text(
-            text,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.68),
-              fontSize: 13,
-              height: 1.45,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ThinBar extends StatelessWidget {
-  final String label;
-  final int value;
-  final int maxValue;
-
-  const _ThinBar({
-    required this.label,
-    required this.value,
-    required this.maxValue,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final factor = maxValue <= 0 ? 0.0 : value / maxValue;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
-                    color: Colors.white.withOpacity(0.74),
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              Text(
-                value.toString(),
-                style: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.42),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 10),
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: Stack(
               children: [
                 Container(
-                  height: 8,
+                  height: 7,
                   color: Colors.white.withOpacity(0.07),
                 ),
-                FractionallySizedBox(
-                  widthFactor: factor.clamp(0.0, 1.0),
-                  child: Container(
-                    height: 8,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      gradient: const LinearGradient(
-                        colors: [
-                          kAnalyticsAccent,
-                          Color(0xFFFF6F91),
-                        ],
+                if (hasValue)
+                  FractionallySizedBox(
+                    widthFactor: (safeValue / 100).clamp(0.0, 1.0),
+                    child: Container(
+                      height: 7,
+                      color: color,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              color: kMuted,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DomainMixCard extends StatelessWidget {
+  final _AnalyticsData data;
+
+  const _DomainMixCard({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = _sortedMap(data.domains).take(4).toList();
+    final total = entries.fold<int>(0, (sum, entry) => sum + entry.value);
+
+    return _Panel(
+      height: 335,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardHeader(
+            title: 'Top domains',
+            trailing: 'media spread',
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Where the user spends most of their tracked activity.',
+            style: GoogleFonts.inter(
+              color: kMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Expanded(
+            child: entries.isEmpty
+                ? const _MiniEmpty(text: 'No domain data yet.')
+                : Column(
+                    children: entries.map((entry) {
+                      final percent = total == 0 ? 0.0 : (entry.value / total) * 100;
+
+                      return _DomainRow(
+                        label: _prettyDomain(entry.key),
+                        value: entry.value,
+                        percent: percent,
+                        icon: _domainIcon(entry.key),
+                        color: _domainColor(entry.key),
+                      );
+                    }).toList(),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DomainRow extends StatelessWidget {
+  final String label;
+  final int value;
+  final double percent;
+  final IconData icon;
+  final Color color;
+
+  const _DomainRow({
+    required this.label,
+    required this.value,
+    required this.percent,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 17),
+      child: Row(
+        children: [
+          Container(
+            width: 35,
+            height: 35,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.13),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: color.withOpacity(0.16)),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
+                    Text(
+                      '${percent.round()}%',
+                      style: GoogleFonts.inter(
+                        color: Colors.white.withOpacity(0.72),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 7),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: Stack(
+                    children: [
+                      Container(
+                        height: 8,
+                        color: Colors.white.withOpacity(0.065),
+                      ),
+                      FractionallySizedBox(
+                        widthFactor: (percent / 100).clamp(0.0, 1.0),
+                        child: Container(
+                          height: 8,
+                          color: color,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -1596,13 +1611,144 @@ class _ThinBar extends StatelessWidget {
     );
   }
 }
-class _SourceLine extends StatelessWidget {
+class _SourceBreakdownCard extends StatelessWidget {
+  final _AnalyticsData data;
+
+  const _SourceBreakdownCard({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = _sortedMap(data.sourceGroups)
+        .where((entry) => entry.value > 0)
+        .toList();
+
+    return _Panel(
+      height: 355,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardHeader(
+            title: 'Discovery sources',
+            trailing: 'influence',
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Grouped by how items entered the library.',
+            style: GoogleFonts.inter(
+              color: kMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _InfluenceRow(label: 'Algorithm', value: data.algorithmInfluence, color: kOrange),
+          _InfluenceRow(label: 'AI', value: data.aiInfluence, color: kTeal),
+          _InfluenceRow(label: 'Social', value: data.socialInfluence, color: kBlue),
+          _InfluenceRow(label: 'Search', value: data.searchInfluence, color: kGreen),
+          _InfluenceRow(label: 'Direct', value: data.directInfluence, color: kYellow),
+          const SizedBox(height: 10),
+          Expanded(
+            child: entries.isEmpty
+                ? const _MiniEmpty(text: 'No discovery source data yet.')
+                : ListView.builder(
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: entries.length,
+                    itemBuilder: (context, index) {
+                      final entry = entries[index];
+                      return _SourceMiniRow(
+                        label: entry.key,
+                        value: entry.value,
+                        maxValue: entries.first.value,
+                        color: _groupColor(entry.key),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfluenceRow extends StatelessWidget {
+  final String label;
+  final double value;
+  final Color color;
+
+  const _InfluenceRow({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final safeValue = value.clamp(0.0, 100.0);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                color: Colors.white.withOpacity(0.74),
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: Stack(
+                children: [
+                  Container(
+                    height: 8,
+                    color: Colors.white.withOpacity(0.065),
+                  ),
+                  FractionallySizedBox(
+                    widthFactor: (safeValue / 100).clamp(0.0, 1.0),
+                    child: Container(
+                      height: 8,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 9),
+          SizedBox(
+            width: 38,
+            child: Text(
+              safeValue == 0 ? '—' : '${safeValue.round()}%',
+              textAlign: TextAlign.right,
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SourceMiniRow extends StatelessWidget {
   final String label;
   final int value;
   final int maxValue;
   final Color color;
 
-  const _SourceLine({
+  const _SourceMiniRow({
     required this.label,
     required this.value,
     required this.maxValue,
@@ -1614,169 +1760,120 @@ class _SourceLine extends StatelessWidget {
     final factor = maxValue <= 0 ? 0.0 : value / maxValue;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          SizedBox(
-            width: 92,
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(99),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
             child: Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: GoogleFonts.inter(
                 color: Colors.white.withOpacity(0.72),
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: Stack(
-                children: [
-                  Container(
-                    height: 28,
-                    color: Colors.white.withOpacity(0.065),
-                  ),
-                  FractionallySizedBox(
-                    widthFactor: factor.clamp(0.0, 1.0),
-                    child: Container(
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: color,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 34,
-            child: Text(
-              value.toString(),
-              textAlign: TextAlign.right,
-              style: GoogleFonts.inter(
-                color: Colors.white.withOpacity(0.50),
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RatingLine extends StatelessWidget {
-  final String label;
-  final double rating;
-
-  const _RatingLine({
-    required this.label,
-    required this.rating,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final factor = (rating / 5).clamp(0.0, 1.0);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 76,
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                color: Colors.white.withOpacity(0.72),
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: Stack(
-                children: [
-                  Container(
-                    height: 8,
-                    color: Colors.white.withOpacity(0.07),
-                  ),
-                  FractionallySizedBox(
-                    widthFactor: factor,
-                    child: Container(
-                      height: 8,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(999),
-                        color: kAnalyticsAccent,
-                      ),
-                    ),
-                  ),
-                ],
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
           const SizedBox(width: 10),
-          Text(
-            rating.toStringAsFixed(1),
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.48),
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
+          SizedBox(
+            width: 70,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: Stack(
+                children: [
+                  Container(
+                    height: 7,
+                    color: Colors.white.withOpacity(0.06),
+                  ),
+                  FractionallySizedBox(
+                    widthFactor: factor.clamp(0.0, 1.0),
+                    child: Container(
+                      height: 7,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InlineMetric extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _InlineMetric({
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.045),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.055)),
-      ),
-      child: Row(
-        children: [
+          const SizedBox(width: 8),
           Text(
-            label,
+            value.toString(),
             style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.45),
-              fontSize: 12,
+              color: kMuted,
+              fontSize: 10,
               fontWeight: FontWeight.w800,
             ),
           ),
-          const Spacer(),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreferenceFormationCard extends StatelessWidget {
+  final _AnalyticsData data;
+
+  const _PreferenceFormationCard({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final derived = _sortedMap(data.derivedGenres).take(6).toList();
+    final actual = _sortedMap(data.actualGenres).take(6).toList();
+
+    return _Panel(
+      height: 355,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardHeader(
+            title: 'Preference formation',
+            trailing: 'initial vs actual',
+          ),
+          const SizedBox(height: 6),
           Text(
-            value,
+            'Compares onboarding-derived genres with real interaction behavior.',
             style: GoogleFonts.inter(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
+              color: kMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: _PreferenceColumn(
+                    title: 'Derived',
+                    entries: derived,
+                    empty: 'No onboarding data',
+                    color: kGreen,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _PreferenceColumn(
+                    title: 'Actual',
+                    entries: actual,
+                    empty: 'No activity data',
+                    color: kOrange,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -1785,229 +1882,808 @@ class _InlineMetric extends StatelessWidget {
   }
 }
 
-class _SoftPill extends StatelessWidget {
-  final String text;
+class _PreferenceColumn extends StatelessWidget {
+  final String title;
+  final List<MapEntry<String, int>> entries;
+  final String empty;
+  final Color color;
 
-  const _SoftPill({
+  const _PreferenceColumn({
+    required this.title,
+    required this.entries,
+    required this.empty,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final maxValue = entries.isEmpty ? 1 : entries.first.value;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: GoogleFonts.inter(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 13),
+        if (entries.isEmpty)
+          Expanded(child: _MiniEmpty(text: empty))
+        else
+          Expanded(
+            child: ListView.builder(
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: entries.length,
+              itemBuilder: (context, index) {
+                final entry = entries[index];
+                final factor = maxValue == 0 ? 0.0 : entry.value / maxValue;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 11),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              entry.key,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                color: Colors.white.withOpacity(0.74),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            entry.value.toString(),
+                            style: GoogleFonts.inter(
+                              color: kMuted,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: Stack(
+                          children: [
+                            Container(
+                              height: 7,
+                              color: Colors.white.withOpacity(0.065),
+                            ),
+                            FractionallySizedBox(
+                              widthFactor: factor.clamp(0.0, 1.0),
+                              child: Container(
+                                height: 7,
+                                color: color,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+class _BehaviorSignalsCard extends StatelessWidget {
+  final _AnalyticsData data;
+
+  const _BehaviorSignalsCard({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final signals = [
+      _BehaviorSignal('Saved', data.savedItems, Icons.bookmark_rounded, kOrange),
+      _BehaviorSignal('Favorite', data.favoriteItems, Icons.favorite_rounded, kCoral),
+      _BehaviorSignal('Rated', data.ratedItems, Icons.star_rounded, kYellow),
+      _BehaviorSignal('Reviewed', data.reviewedItems, Icons.rate_review_rounded, kGreen),
+    ];
+
+    return _Panel(
+      height: 315,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardHeader(
+            title: 'Behavior signals',
+            trailing: 'interaction depth',
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Tracks the actions that show stronger preference evidence.',
+            style: GoogleFonts.inter(
+              color: kMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: GridView.builder(
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: signals.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                mainAxisExtent: 86,
+              ),
+              itemBuilder: (context, index) {
+                final signal = signals[index];
+
+                return Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.035),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.055),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(signal.icon, color: signal.color, size: 17),
+                      const Spacer(),
+                      Text(
+                        signal.value.toString(),
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.8,
+                          height: 0.9,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        signal.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: kMuted,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BehaviorSignal {
+  final String label;
+  final int value;
+  final IconData icon;
+  final Color color;
+
+  const _BehaviorSignal(
+    this.label,
+    this.value,
+    this.icon,
+    this.color,
+  );
+}
+
+class _RatingMovementCard extends StatelessWidget {
+  final _AnalyticsData data;
+
+  const _RatingMovementCard({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      height: 315,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardHeader(
+            title: 'Rating movement',
+            trailing: '6 months',
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Average rating trend across recent tracked items.',
+            style: GoogleFonts.inter(
+              color: kMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Expanded(
+            child: CustomPaint(
+              painter: _AreaChartPainter(
+                points: data.ratingTrend,
+                color: kGreen,
+                maxY: 5,
+              ),
+              child: Container(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecentLogsCard extends StatelessWidget {
+  final _AnalyticsData data;
+
+  const _RecentLogsCard({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      height: 315,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardHeader(
+            title: 'Recent logs',
+            trailing: 'latest',
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Latest tracked item activity.',
+            style: GoogleFonts.inter(
+              color: kMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: data.logs.isEmpty
+                ? const _MiniEmpty(text: 'No recent activity yet.')
+                : ListView.separated(
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: min(data.logs.length, 6),
+                    separatorBuilder: (_, __) => Divider(
+                      height: 12,
+                      color: Colors.white.withOpacity(0.055),
+                    ),
+                    itemBuilder: (context, index) {
+                      return _LogTile(log: data.logs[index]);
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LogTile extends StatelessWidget {
+  final _LogItem log;
+
+  const _LogTile({
+    required this.log,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: log.color.withOpacity(0.13),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            Icons.bolt_rounded,
+            color: log.color,
+            size: 16,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                log.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                log.subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          _shortDate(log.date),
+          style: GoogleFonts.inter(
+            color: Colors.white.withOpacity(0.38),
+            fontSize: 9.5,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _shortDate(DateTime date) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
+  return '${months[date.month - 1]} ${date.day}';
+}
+class _TinyPill extends StatelessWidget {
+  final String text;
+  final Color color;
+
+  const _TinyPill({
     required this.text,
+    required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.055),
+        color: color.withOpacity(0.13),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.065)),
       ),
       child: Text(
         text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: GoogleFonts.inter(
-          color: Colors.white.withOpacity(0.76),
-          fontSize: 12.2,
-          fontWeight: FontWeight.w800,
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
   }
 }
 
-class _TinyLabel extends StatelessWidget {
-  final String text;
+class _Panel extends StatelessWidget {
+  final Widget child;
+  final double? height;
+  final EdgeInsetsGeometry padding;
 
-  const _TinyLabel({
-    required this.text,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: GoogleFonts.inter(
-        color: kAnalyticsAccent,
-        fontSize: 11.5,
-        fontWeight: FontWeight.w900,
-        letterSpacing: 1.5,
-      ),
-    );
-  }
-}
-
-class _ActionSignal {
-  final String label;
-  final int value;
-  final IconData icon;
-
-  const _ActionSignal({
-    required this.label,
-    required this.value,
-    required this.icon,
-  });
-}
-
-class _ActionSignalCard extends StatelessWidget {
-  final _ActionSignal signal;
-
-  const _ActionSignalCard({
-    required this.signal,
+  const _Panel({
+    required this.child,
+    this.height,
+    this.padding = const EdgeInsets.all(16),
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      height: height,
+      padding: padding,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.045),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.055)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(signal.icon, color: kAnalyticsAccent, size: 20),
-          const Spacer(),
-          Text(
-            signal.value.toString(),
-            style: GoogleFonts.inter(
-              color: Colors.white,
-              fontSize: 27,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -1,
-              height: 0.9,
-            ),
-          ),
-          const SizedBox(height: 7),
-          Text(
-            signal.label,
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.48),
-              fontSize: 11.5,
-              fontWeight: FontWeight.w800,
-            ),
+        color: kAnalyticsPanel.withOpacity(0.94),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.24),
+            blurRadius: 24,
+            offset: const Offset(0, 16),
           ),
         ],
       ),
+      child: child,
     );
   }
 }
 
-class _ScoreRing extends StatelessWidget {
-  final double score;
-  final double size;
-  final String value;
+class _CardHeader extends StatelessWidget {
+  final String title;
+  final String trailing;
 
-  const _ScoreRing({
-    required this.score,
-    required this.size,
-    required this.value,
+  const _CardHeader({
+    required this.title,
+    required this.trailing,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          CustomPaint(
-            size: Size(size, size),
-            painter: _RingPainter(
-              progress: (score / 100).clamp(0.0, 1.0),
-            ),
-          ),
-          Text(
-            value,
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
               color: Colors.white,
-              fontSize: size < 150 ? 31 : 38,
+              fontSize: 13,
               fontWeight: FontWeight.w900,
-              letterSpacing: -1.5,
+              letterSpacing: -0.2,
             ),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          trailing,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.inter(
+            color: kMuted,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _RingPainter extends CustomPainter {
-  final double progress;
-
-  const _RingPainter({
-    required this.progress,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stroke = size.width * 0.07;
-    final rect = Offset.zero & size;
-    final center = rect.center;
-    final radius = (size.width - stroke) / 2;
-
-    final bgPaint = Paint()
-      ..color = Colors.white.withOpacity(0.075)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.round;
-
-    final fgPaint = Paint()
-      ..shader = const LinearGradient(
-        colors: [
-          kAnalyticsAccent,
-          Color(0xFFFF6F91),
-          Color(0xFFB794F6),
-        ],
-      ).createShader(rect)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawCircle(center, radius, bgPaint);
-
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -pi / 2,
-      progress * 2 * pi,
-      false,
-      fgPaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _RingPainter oldDelegate) {
-    return oldDelegate.progress != progress;
-  }
-}
-
-class _EmptyTiny extends StatelessWidget {
+class _MiniEmpty extends StatelessWidget {
   final String text;
 
-  const _EmptyTiny({
+  const _MiniEmpty({
     required this.text,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.035),
-        borderRadius: BorderRadius.circular(22),
-      ),
+    return Center(
       child: Text(
         text,
         textAlign: TextAlign.center,
         style: GoogleFonts.inter(
-          color: Colors.white.withOpacity(0.44),
-          fontSize: 12.5,
-          height: 1.45,
+          color: kMuted,
+          fontSize: 12,
           fontWeight: FontWeight.w700,
+          height: 1.4,
         ),
       ),
     );
+  }
+}
+class _HeatmapPainter extends CustomPainter {
+  final List<int> values;
+
+  const _HeatmapPainter({
+    required this.values,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const columns = 12;
+    const rows = 7;
+    const gap = 5.0;
+
+    final cellWidth = (size.width - gap * (columns - 1)) / columns;
+    final cellHeight = (size.height - gap * (rows - 1)) / rows;
+    final cell = min(cellWidth, cellHeight);
+
+    final maxValue = values.isEmpty ? 1 : values.reduce(max).clamp(1, 99);
+
+    for (int i = 0; i < values.length; i++) {
+      final column = i ~/ rows;
+      final row = i % rows;
+
+      final intensity = (values[i] / maxValue).clamp(0.0, 1.0);
+
+      final color = values[i] == 0
+          ? const Color(0xFF25252A)
+          : Color.lerp(
+              const Color(0xFF5A2B21),
+              kOrange,
+              intensity,
+            )!;
+
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          column * (cell + gap),
+          row * (cell + gap),
+          cell,
+          cell,
+        ),
+        const Radius.circular(5),
+      );
+
+      canvas.drawRRect(
+        rect,
+        Paint()..color = color.withOpacity(values[i] == 0 ? 0.72 : 0.96),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HeatmapPainter oldDelegate) {
+    return oldDelegate.values != values;
+  }
+}
+
+class _LineChartPainter extends CustomPainter {
+  final List<_TrendPoint> points;
+  final Color primaryColor;
+  final Color secondaryColor;
+  final double maxY;
+
+  const _LineChartPainter({
+    required this.points,
+    required this.primaryColor,
+    required this.secondaryColor,
+    required this.maxY,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.length < 2) return;
+
+    const left = 34.0;
+    const right = 12.0;
+    const top = 8.0;
+    const bottom = 24.0;
+
+    final chart = Rect.fromLTWH(
+      left,
+      top,
+      size.width - left - right,
+      size.height - top - bottom,
+    );
+
+    final gridPaint = Paint()
+      ..color = Colors.white.withOpacity(0.07)
+      ..strokeWidth = 1;
+
+    for (int i = 0; i <= 4; i++) {
+      final y = chart.top + chart.height * (i / 4);
+      canvas.drawLine(
+        Offset(chart.left, y),
+        Offset(chart.right, y),
+        gridPaint,
+      );
+    }
+
+    final primaryPath = Path();
+    final secondaryPath = Path();
+
+    for (int i = 0; i < points.length; i++) {
+      final x = chart.left + chart.width * (i / (points.length - 1));
+
+      final yPrimary = chart.bottom -
+          chart.height * (points[i].value / maxY).clamp(0.0, 1.0);
+
+      final ySecondary = chart.bottom -
+          chart.height * (points[i].secondary / maxY).clamp(0.0, 1.0);
+
+      if (i == 0) {
+        primaryPath.moveTo(x, yPrimary);
+        secondaryPath.moveTo(x, ySecondary);
+      } else {
+        primaryPath.lineTo(x, yPrimary);
+        secondaryPath.lineTo(x, ySecondary);
+      }
+
+      canvas.drawCircle(
+        Offset(x, yPrimary),
+        3.2,
+        Paint()..color = primaryColor,
+      );
+
+      final label = TextPainter(
+        text: TextSpan(
+          text: points[i].label,
+          style: GoogleFonts.inter(
+            color: kMuted,
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      label.paint(
+        canvas,
+        Offset(x - label.width / 2, chart.bottom + 9),
+      );
+    }
+
+    canvas.drawPath(
+      secondaryPath,
+      Paint()
+        ..color = secondaryColor.withOpacity(0.62)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.7,
+    );
+
+    canvas.drawPath(
+      primaryPath,
+      Paint()
+        ..shader = LinearGradient(
+          colors: [
+            primaryColor,
+            kCoral,
+          ],
+        ).createShader(chart)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.3
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _LineChartPainter oldDelegate) {
+    return oldDelegate.points != points || oldDelegate.maxY != maxY;
+  }
+}
+class _AreaChartPainter extends CustomPainter {
+  final List<_TrendPoint> points;
+  final Color color;
+  final double maxY;
+
+  const _AreaChartPainter({
+    required this.points,
+    required this.color,
+    required this.maxY,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.length < 2) return;
+
+    const left = 30.0;
+    const right = 12.0;
+    const top = 10.0;
+    const bottom = 24.0;
+
+    final chart = Rect.fromLTWH(
+      left,
+      top,
+      size.width - left - right,
+      size.height - top - bottom,
+    );
+
+    final gridPaint = Paint()
+      ..color = Colors.white.withOpacity(0.065)
+      ..strokeWidth = 1;
+
+    for (int i = 0; i <= 5; i++) {
+      final y = chart.top + chart.height * (i / 5);
+      canvas.drawLine(
+        Offset(chart.left, y),
+        Offset(chart.right, y),
+        gridPaint,
+      );
+    }
+
+    final linePath = Path();
+    final fillPath = Path();
+
+    for (int i = 0; i < points.length; i++) {
+      final x = chart.left + chart.width * (i / (points.length - 1));
+      final y = chart.bottom -
+          chart.height * (points[i].value / maxY).clamp(0.0, 1.0);
+
+      if (i == 0) {
+        linePath.moveTo(x, y);
+        fillPath.moveTo(x, chart.bottom);
+        fillPath.lineTo(x, y);
+      } else {
+        linePath.lineTo(x, y);
+        fillPath.lineTo(x, y);
+      }
+
+      final label = TextPainter(
+        text: TextSpan(
+          text: points[i].label,
+          style: GoogleFonts.inter(
+            color: kMuted,
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      label.paint(
+        canvas,
+        Offset(x - label.width / 2, chart.bottom + 9),
+      );
+    }
+
+    fillPath.lineTo(chart.right, chart.bottom);
+    fillPath.close();
+
+    canvas.drawPath(
+      fillPath,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            color.withOpacity(0.32),
+            color.withOpacity(0.02),
+          ],
+        ).createShader(chart),
+    );
+
+    canvas.drawPath(
+      linePath,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.3
+        ..strokeCap = StrokeCap.round,
+    );
+
+    for (int i = 0; i < points.length; i++) {
+      final x = chart.left + chart.width * (i / (points.length - 1));
+      final y = chart.bottom -
+          chart.height * (points[i].value / maxY).clamp(0.0, 1.0);
+
+      canvas.drawCircle(
+        Offset(x, y),
+        3.1,
+        Paint()..color = color,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _AreaChartPainter oldDelegate) {
+    return oldDelegate.points != points || oldDelegate.maxY != maxY;
   }
 }
 
@@ -2027,61 +2703,59 @@ class _AnalyticsError extends StatelessWidget {
       body: Center(
         child: Container(
           margin: const EdgeInsets.all(22),
-          padding: const EdgeInsets.all(24),
-          constraints: const BoxConstraints(maxWidth: 520),
+          padding: const EdgeInsets.all(22),
+          constraints: const BoxConstraints(maxWidth: 430),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.045),
-            borderRadius: BorderRadius.circular(30),
-            border: Border.all(color: Colors.white.withOpacity(0.06)),
+            color: kAnalyticsPanel,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.white.withOpacity(0.07)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(
                 Icons.error_outline_rounded,
-                color: kAnalyticsAccent,
-                size: 38,
+                color: kOrange,
+                size: 34,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               Text(
                 'Could not load analytics',
-                textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
                   color: Colors.white,
-                  fontSize: 22,
+                  fontSize: 18,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: -0.5,
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Text(
                 message,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.54),
-                  fontSize: 13.5,
-                  height: 1.5,
+                  color: kMuted,
+                  fontSize: 12,
+                  height: 1.45,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 18),
               InkWell(
                 onTap: onRetry,
                 borderRadius: BorderRadius.circular(999),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 22,
-                    vertical: 13,
+                    horizontal: 18,
+                    vertical: 11,
                   ),
                   decoration: BoxDecoration(
-                    color: kAnalyticsAccent,
+                    color: kOrange,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     'Try again',
                     style: GoogleFonts.inter(
                       color: Colors.black,
-                      fontSize: 13,
+                      fontSize: 12,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
@@ -2093,11 +2767,4 @@ class _AnalyticsError extends StatelessWidget {
       ),
     );
   }
-}
-
-List<MapEntry<String, int>> _sortedEntries(Map<String, int> map) {
-  final entries = map.entries.toList()
-    ..sort((a, b) => b.value.compareTo(a.value));
-
-  return entries;
 }

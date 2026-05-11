@@ -2528,129 +2528,76 @@ class _SimilarItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = _highQualityImage(item.imageUrl);
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ItemDetailsScreen(
-                item: item.copyWith(
-                  discoverySource: item.discoverySource.trim().isNotEmpty
-                      ? item.discoverySource
-                      : 'similar',
-                  discoveryContext: item.discoveryContext.trim().isNotEmpty
-                      ? item.discoveryContext
-                      : 'More like this',
+    return GestureDetector(
+      onTap: () {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ItemDetailsScreen(item: item),
+          ),
+        );
+      },
+      child: SizedBox(
+        width: 118,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 2 / 3,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.network(
+                  _highQualityImage(item.imageUrl),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) {
+                    return Container(
+                      color: const Color(0xFF18181C),
+                      child: const Icon(
+                        Icons.image_not_supported_outlined,
+                        color: Colors.white38,
+                        size: 24,
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
-          );
-        },
-        child: Container(
-          height: 210,
-          decoration: BoxDecoration(
-            color: const Color(0xFF111114),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.07)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.28),
-                blurRadius: 24,
-                offset: const Offset(0, 14),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (imageUrl.trim().isNotEmpty)
-                  Image.network(
-                    imageUrl,
-                    fit: BoxFit.cover,
-                    alignment: Alignment.center,
-                    filterQuality: FilterQuality.high,
-                    errorBuilder: (_, __, ___) => _fallback(),
-                  )
-                else
-                  _fallback(),
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withOpacity(0.05),
-                          Colors.black.withOpacity(0.18),
-                          Colors.black.withOpacity(0.88),
-                        ],
-                        stops: const [0.0, 0.45, 1.0],
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 15,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          height: 1.1,
-                          letterSpacing: -0.35,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        item.genres.isEmpty
-                            ? item.domain
-                            : item.genres.take(2).join(' • '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          color: Colors.white.withOpacity(0.62),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
-  Widget _fallback() {
-    return Container(
-      color: Colors.white.withOpacity(0.06),
-      child: const Center(
-        child: Icon(
-          Icons.image_outlined,
-          color: Colors.white54,
-          size: 28,
+            const SizedBox(height: 8),
+
+            Text(
+              item.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                height: 1.15,
+              ),
+            ),
+
+            const SizedBox(height: 4),
+
+            Text(
+              item.genres.isEmpty
+                  ? 'Curated'
+                  : item.genres.take(1).join(' • '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                color: Colors.white.withOpacity(0.45),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
+
 class _PrimaryButton extends StatelessWidget {
   final String label;
   final IconData icon;
