@@ -150,8 +150,12 @@ class _DashboardGrid extends StatelessWidget {
           leftFlex: 42,
           rightFlex: 58,
           left: _SourceBreakdownCard(data: data),
-          right: _PreferenceFormationCard(data: data),
+          right: _DiscoveryImpactCard(data: data),
         ),
+        const SizedBox(height: 16),
+        _PreferenceFormationCard(data: data),
+        const SizedBox(height: 16),
+        _CrossDomainTasteCard(data: data),
         const SizedBox(height: 16),
         _ResponsiveThreeRow(
           first: _BehaviorSignalsCard(data: data),
@@ -272,10 +276,18 @@ class _AnalyticsData {
   final Map<String, int> sourceGroups;
   final Map<String, int> discoverySources;
   final Map<String, int> activityByDay;
+  final Map<String, Map<String, int>> domainGenres;
 
   final List<_TrendPoint> discoveryTrend;
   final List<_TrendPoint> ratingTrend;
   final List<_LogItem> logs;
+  final List<_TasteContrast> tasteContrasts;
+  final List<_SourceInsight>? sourceInsights;
+
+  final String strongestDiversitySource;
+  final String strongestExplorationSource;
+  final String strongestCrossDomainSource;
+  final String strongestRatingSource;
 
   const _AnalyticsData({
     required this.displayName,
@@ -300,9 +312,16 @@ class _AnalyticsData {
     required this.sourceGroups,
     required this.discoverySources,
     required this.activityByDay,
+    required this.domainGenres,
     required this.discoveryTrend,
     required this.ratingTrend,
     required this.logs,
+    required this.tasteContrasts,
+    required this.sourceInsights,
+    required this.strongestDiversitySource,
+    required this.strongestExplorationSource,
+    required this.strongestCrossDomainSource,
+    required this.strongestRatingSource,
   });
 
   factory _AnalyticsData.fromFirestore({
@@ -322,12 +341,22 @@ class _AnalyticsData {
           derivedPrefs['selectedGenres'],
     );
 
+    final initialDomains = _readStringList(
+      derivedPrefs['topDomains'] ??
+          derivedPrefs['domains'] ??
+          derivedPrefs['favoriteDomains'] ??
+          derivedPrefs['selectedDomains'],
+    ).map(_cleanDomain).where((domain) => domain != 'media').toSet();
+
     final domains = <String, int>{};
     final genres = <String, int>{};
     final derivedGenres = <String, int>{};
     final actualGenres = <String, int>{};
     final discoverySources = <String, int>{};
     final activityByDay = <String, int>{};
+    final domainGenres = <String, Map<String, int>>{};
+    final sourceAccumulators = <String, _SourceAccumulator>{};
+
     final sourceGroups = <String, int>{
       'Algorithm': 0,
       'AI': 0,
@@ -343,6 +372,11 @@ class _AnalyticsData {
       }
     }
 
+    final derivedGenreSet = derivedGenres.keys
+        .map((genre) => genre.toLowerCase().trim())
+        .where((genre) => genre.isNotEmpty)
+        .toSet();
+
     int savedItems = 0;
     int favoriteItems = 0;
     int ratedItems = 0;
@@ -354,6 +388,7 @@ class _AnalyticsData {
     for (final item in libraryItems) {
       final domain = _cleanDomain(item['domain'] ?? item['type'] ?? item['mediaType']);
       domains[domain] = (domains[domain] ?? 0) + 1;
+      domainGenres.putIfAbsent(domain, () => <String, int>{});
 
       final sourceRaw = (item['discoverySource'] ??
               item['source'] ??
@@ -363,30 +398,67 @@ class _AnalyticsData {
           .toString();
 
       final cleanSource = _cleanDiscoverySource(sourceRaw);
-      discoverySources[cleanSource] = (discoverySources[cleanSource] ?? 0) + 1;
-
       final group = _sourceGroup(sourceRaw);
+
+      discoverySources[cleanSource] = (discoverySources[cleanSource] ?? 0) + 1;
       sourceGroups[group] = (sourceGroups[group] ?? 0) + 1;
 
-      final itemGenres = _readStringList(item['genres']);
+      final sourceAccumulator = sourceAccumulators.putIfAbsent(
+        group,
+        () => _SourceAccumulator(group),
+      );
+
+      final itemGenres = _readStringList(item['genres'])
+          .map(_cleanLabel)
+          .where((genre) => genre.isNotEmpty)
+          .toList();
+
+      sourceAccumulator.items++;
+      sourceAccumulator.domains.add(domain);
+
       for (final genre in itemGenres) {
-        final clean = _cleanLabel(genre);
-        if (clean.isEmpty) continue;
-        genres[clean] = (genres[clean] ?? 0) + 1;
-        actualGenres[clean] = (actualGenres[clean] ?? 0) + 1;
+        final genreKey = genre.toLowerCase().trim();
+
+        genres[genre] = (genres[genre] ?? 0) + 1;
+        actualGenres[genre] = (actualGenres[genre] ?? 0) + 1;
+        sourceAccumulator.genres.add(genre);
+
+        if (derivedGenreSet.isNotEmpty && !derivedGenreSet.contains(genreKey)) {
+          sourceAccumulator.exploratoryGenreHits++;
+        }
+
+        final domainMap = domainGenres[domain] ?? <String, int>{};
+        domainMap[genre] = (domainMap[genre] ?? 0) + 1;
+        domainGenres[domain] = domainMap;
+      }
+
+      if (initialDomains.isNotEmpty && !initialDomains.contains(domain)) {
+        sourceAccumulator.crossDomainHits++;
       }
 
       final rating = _ratingOf(item);
       if (rating > 0) {
         ratedItems++;
         ratingTotal += rating;
+        sourceAccumulator.ratedItems++;
+        sourceAccumulator.ratingTotal += rating;
       }
 
-      if (item['isSaved'] == true) savedItems++;
-      if (item['isFavorite'] == true) favoriteItems++;
+      if (item['isSaved'] == true) {
+        savedItems++;
+        sourceAccumulator.savedItems++;
+      }
+
+      if (item['isFavorite'] == true) {
+        favoriteItems++;
+        sourceAccumulator.favoriteItems++;
+      }
 
       final review = (item['review'] ?? item['lastReview'] ?? item['latestReview'] ?? '').toString().trim();
-      if (review.isNotEmpty) reviewedItems++;
+      if (review.isNotEmpty) {
+        reviewedItems++;
+        sourceAccumulator.reviewedItems++;
+      }
 
       final date = _readDate(item);
       activityByDay[_dateKey(date)] = (activityByDay[_dateKey(date)] ?? 0) + 1;
@@ -406,9 +478,9 @@ class _AnalyticsData {
 
       if (sourceRaw.trim().isNotEmpty) {
         final cleanSource = _cleanDiscoverySource(sourceRaw);
-        discoverySources[cleanSource] = (discoverySources[cleanSource] ?? 0) + 1;
-
         final group = _sourceGroup(sourceRaw);
+
+        discoverySources[cleanSource] = (discoverySources[cleanSource] ?? 0) + 1;
         sourceGroups[group] = (sourceGroups[group] ?? 0) + 1;
       }
 
@@ -448,6 +520,28 @@ class _AnalyticsData {
                 reviewedItems * 1.2,
           ).toDouble();
 
+    final List<_SourceInsight> sourceInsights = sourceAccumulators.values
+    .map((source) => source.toInsight())
+    .where((source) => source.items > 0)
+    .toList();
+
+sourceInsights.sort((a, b) => b.items.compareTo(a.items));
+
+String strongestBy(double Function(_SourceInsight source) selector) {
+  if (sourceInsights.isEmpty) {
+    return 'No source yet';
+  }
+
+  final sorted = List<_SourceInsight>.from(sourceInsights)
+    ..sort((a, b) => selector(b).compareTo(selector(a)));
+
+  if (sorted.isEmpty) {
+    return 'No source yet';
+  }
+
+  return sorted.first.label;
+}
+
     logs.sort((a, b) => b.date.compareTo(a.date));
 
     return _AnalyticsData(
@@ -473,12 +567,91 @@ class _AnalyticsData {
       sourceGroups: sourceGroups,
       discoverySources: discoverySources,
       activityByDay: activityByDay,
+      domainGenres: domainGenres,
       discoveryTrend: _buildDiscoveryTrend(libraryItems),
       ratingTrend: _buildRatingTrend(libraryItems),
       logs: logs.take(8).toList(),
+      tasteContrasts: _buildTasteContrasts(domainGenres),
+      sourceInsights: sourceInsights,
+      strongestDiversitySource: strongestBy((source) => source.genreDiversity),
+      strongestExplorationSource: strongestBy((source) => source.explorationRate),
+      strongestCrossDomainSource: strongestBy((source) => source.crossDomainRate),
+      strongestRatingSource: strongestBy((source) => source.averageRating),
     );
   }
 }
+
+class _SourceAccumulator {
+  final String label;
+  int items = 0;
+  int savedItems = 0;
+  int favoriteItems = 0;
+  int ratedItems = 0;
+  int reviewedItems = 0;
+  int exploratoryGenreHits = 0;
+  int crossDomainHits = 0;
+  double ratingTotal = 0;
+  final Set<String> genres = <String>{};
+  final Set<String> domains = <String>{};
+
+  _SourceAccumulator(this.label);
+
+  _SourceInsight toInsight() {
+    return _SourceInsight(
+      label: label,
+      items: items,
+      savedItems: savedItems,
+      favoriteItems: favoriteItems,
+      ratedItems: ratedItems,
+      reviewedItems: reviewedItems,
+      uniqueGenres: genres.length,
+      uniqueDomains: domains.length,
+      genreDiversity: items == 0 ? 0.0 : (genres.length / items) * 100,
+      explorationRate: items == 0 ? 0.0 : (exploratoryGenreHits / items) * 100,
+      crossDomainRate: items == 0 ? 0.0 : (crossDomainHits / items) * 100,
+      averageRating: ratedItems == 0 ? 0.0 : ratingTotal / ratedItems,
+      actionDepth: items == 0
+          ? 0.0
+          : ((savedItems + favoriteItems + ratedItems + reviewedItems) / items) * 25,
+      mode: _discoveryMode(label),
+    );
+  }
+}
+
+class _SourceInsight {
+  final String label;
+  final int items;
+  final int savedItems;
+  final int favoriteItems;
+  final int ratedItems;
+  final int reviewedItems;
+  final int uniqueGenres;
+  final int uniqueDomains;
+  final double genreDiversity;
+  final double explorationRate;
+  final double crossDomainRate;
+  final double averageRating;
+  final double actionDepth;
+  final String mode;
+
+  const _SourceInsight({
+    required this.label,
+    required this.items,
+    required this.savedItems,
+    required this.favoriteItems,
+    required this.ratedItems,
+    required this.reviewedItems,
+    required this.uniqueGenres,
+    required this.uniqueDomains,
+    required this.genreDiversity,
+    required this.explorationRate,
+    required this.crossDomainRate,
+    required this.averageRating,
+    required this.actionDepth,
+    required this.mode,
+  });
+}
+
 class _TrendPoint {
   final String label;
   final double value;
@@ -490,7 +663,6 @@ class _TrendPoint {
     required this.secondary,
   });
 }
-
 class _LogItem {
   final String title;
   final String subtitle;
@@ -502,6 +674,22 @@ class _LogItem {
     required this.subtitle,
     required this.date,
     required this.color,
+  });
+}
+
+class _TasteContrast {
+  final String genre;
+  final String strongDomain;
+  final String weakDomain;
+  final int strongCount;
+  final int weakCount;
+
+  const _TasteContrast({
+    required this.genre,
+    required this.strongDomain,
+    required this.weakDomain,
+    required this.strongCount,
+    required this.weakCount,
   });
 }
 
@@ -616,6 +804,24 @@ String _sourceGroup(String value) {
   }
 
   return 'Direct';
+}
+
+String _discoveryMode(String label) {
+  final clean = label.toLowerCase();
+
+  if (clean.contains('ai') || clean.contains('search')) {
+    return 'Intentional';
+  }
+
+  if (clean.contains('social') || clean.contains('friend') || clean.contains('shelf')) {
+    return 'Social';
+  }
+
+  if (clean.contains('algorithm') || clean.contains('recommend')) {
+    return 'Passive';
+  }
+
+  return 'Mixed';
 }
 
 DateTime _readDate(Map<String, dynamic> data) {
@@ -736,6 +942,51 @@ List<_TrendPoint> _buildRatingTrend(
   return points;
 }
 
+List<_TasteContrast> _buildTasteContrasts(
+  Map<String, Map<String, int>> domainGenres,
+) {
+  final genreDomainCounts = <String, Map<String, int>>{};
+
+  domainGenres.forEach((domain, genreMap) {
+    genreMap.forEach((genre, count) {
+      genreDomainCounts.putIfAbsent(genre, () => <String, int>{});
+      genreDomainCounts[genre]![domain] = count;
+    });
+  });
+
+  final contrasts = <_TasteContrast>[];
+
+  genreDomainCounts.forEach((genre, counts) {
+    if (counts.length < 2) return;
+
+    final entries = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final strongest = entries.first;
+    final weakest = entries.last;
+
+    if (strongest.value <= weakest.value) return;
+
+    contrasts.add(
+      _TasteContrast(
+        genre: genre,
+        strongDomain: strongest.key,
+        weakDomain: weakest.key,
+        strongCount: strongest.value,
+        weakCount: weakest.value,
+      ),
+    );
+  });
+
+  contrasts.sort((a, b) {
+    final aGap = a.strongCount - a.weakCount;
+    final bGap = b.strongCount - b.weakCount;
+    return bGap.compareTo(aGap);
+  });
+
+  return contrasts.take(5).toList();
+}
+
 String _monthLabel(DateTime date) {
   const months = [
     'Jan',
@@ -816,6 +1067,23 @@ IconData _domainIcon(String domain) {
   }
 }
 
+IconData _sourceIcon(String source) {
+  switch (source) {
+    case 'Algorithm':
+      return Icons.auto_awesome_rounded;
+    case 'AI':
+      return Icons.smart_toy_rounded;
+    case 'Social':
+      return Icons.people_alt_rounded;
+    case 'Search':
+      return Icons.search_rounded;
+    case 'Direct':
+      return Icons.ads_click_rounded;
+    default:
+      return Icons.bubble_chart_rounded;
+  }
+}
+
 double _chartMax(List<_TrendPoint> points) {
   final maxValue = points.fold<double>(
     1,
@@ -834,6 +1102,7 @@ List<MapEntry<String, int>> _sortedMap(Map<String, int> map) {
 
   return entries;
 }
+
 class _DashboardBackground extends StatelessWidget {
   const _DashboardBackground();
 
@@ -925,7 +1194,7 @@ class _TopBar extends StatelessWidget {
               border: Border.all(color: Colors.white.withOpacity(0.08)),
             ),
             child: Text(
-              'Taste dashboard',
+              'Preference dashboard',
               style: GoogleFonts.inter(
                 color: Colors.white.withOpacity(0.68),
                 fontSize: 11,
@@ -1001,7 +1270,6 @@ class _MetricsRow extends StatelessWidget {
     );
   }
 }
-
 class _MetricCardData {
   final String title;
   final String value;
@@ -1180,6 +1448,7 @@ class _CalendarLogsCard extends StatelessWidget {
       if (pattern == 0) return 1;
       if (pattern == 5 && index % 3 == 0) return 2;
       if (pattern == 9 && index % 5 == 0) return 1;
+
       return 0;
     });
   }
@@ -1205,6 +1474,7 @@ class _HeatLegendBox extends StatelessWidget {
     );
   }
 }
+
 class _DiscoveryOverviewCard extends StatelessWidget {
   final _AnalyticsData data;
 
@@ -1507,7 +1777,8 @@ class _DomainMixCard extends StatelessWidget {
                 ? const _MiniEmpty(text: 'No domain data yet.')
                 : Column(
                     children: entries.map((entry) {
-                      final percent = total == 0 ? 0.0 : (entry.value / total) * 100;
+                      final percent =
+                          total == 0 ? 0.0 : (entry.value / total) * 100;
 
                       return _DomainRow(
                         label: _prettyDomain(entry.key),
@@ -1625,7 +1896,7 @@ class _SourceBreakdownCard extends StatelessWidget {
         .toList();
 
     return _Panel(
-      height: 355,
+      height: 385,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1635,7 +1906,7 @@ class _SourceBreakdownCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Grouped by how items entered the library.',
+            'Groups each interaction by the pathway that introduced the item.',
             style: GoogleFonts.inter(
               color: kMuted,
               fontSize: 11.5,
@@ -1658,6 +1929,7 @@ class _SourceBreakdownCard extends StatelessWidget {
                     itemCount: entries.length,
                     itemBuilder: (context, index) {
                       final entry = entries[index];
+
                       return _SourceMiniRow(
                         label: entry.key,
                         value: entry.value,
@@ -1821,6 +2093,369 @@ class _SourceMiniRow extends StatelessWidget {
   }
 }
 
+class _DiscoveryImpactCard extends StatelessWidget {
+  final _AnalyticsData data;
+
+  const _DiscoveryImpactCard({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final insights = data.sourceInsights ?? <_SourceInsight>[];
+
+    return _Panel(
+      height: 385,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardHeader(
+            title: 'Discovery impact',
+            trailing: 'comparative behavior',
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Compares discovery pathways using diversity, exploration, ratings, and cross-domain movement.',
+            style: GoogleFonts.inter(
+              color: kMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (insights.isEmpty)
+            const Expanded(
+              child: _MiniEmpty(
+                text: 'No discovery impact data yet. Open items through AI, search, recommendations, shelves, or friends.',
+              ),
+            )
+          else
+            Expanded(
+              child: Column(
+                children: [
+                  _ImpactSummaryStrip(data: data),
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: ListView.separated(
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: min(insights.length, 5).toInt(),
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        return _SourceInsightTile(
+                          insight: insights[index],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImpactSummaryStrip extends StatelessWidget {
+  final _AnalyticsData data;
+
+  const _ImpactSummaryStrip({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final summaries = [
+      _ImpactSummary(
+        label: 'Most diverse',
+        value: data.strongestDiversitySource,
+        color: kTeal,
+        icon: Icons.bubble_chart_rounded,
+      ),
+      _ImpactSummary(
+        label: 'Most exploratory',
+        value: data.strongestExplorationSource,
+        color: kGreen,
+        icon: Icons.explore_rounded,
+      ),
+      _ImpactSummary(
+        label: 'Cross-domain',
+        value: data.strongestCrossDomainSource,
+        color: kBlue,
+        icon: Icons.route_rounded,
+      ),
+      _ImpactSummary(
+        label: 'Highest rating',
+        value: data.strongestRatingSource,
+        color: kYellow,
+        icon: Icons.star_rounded,
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth < 620 ? 2 : 4;
+
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: summaries.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            mainAxisExtent: 72,
+          ),
+          itemBuilder: (context, index) {
+            return _ImpactSummaryCard(summary: summaries[index]);
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ImpactSummary {
+  final String label;
+  final String value;
+  final Color color;
+  final IconData icon;
+
+  const _ImpactSummary({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.icon,
+  });
+}
+
+class _ImpactSummaryCard extends StatelessWidget {
+  final _ImpactSummary summary;
+
+  const _ImpactSummaryCard({
+    required this.summary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: summary.color.withOpacity(0.085),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: summary.color.withOpacity(0.12)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            summary.icon,
+            color: summary.color,
+            size: 17,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  summary.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    color: kMuted,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  summary.value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SourceInsightTile extends StatelessWidget {
+  final _SourceInsight insight;
+
+  const _SourceInsightTile({
+    required this.insight,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _groupColor(insight.label);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.035),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.055)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.13),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: color.withOpacity(0.16)),
+            ),
+            child: Icon(
+              _sourceIcon(insight.label),
+              color: color,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 104,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  insight.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${insight.mode} • ${insight.items} items',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    color: kMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: _MiniImpactBar(
+                    label: 'Diversity',
+                    value: insight.genreDiversity,
+                    color: kTeal,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _MiniImpactBar(
+                    label: 'Explore',
+                    value: insight.explorationRate,
+                    color: kGreen,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _MiniImpactBar(
+                    label: 'Cross',
+                    value: insight.crossDomainRate,
+                    color: kBlue,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _MiniImpactBar(
+                    label: 'Depth',
+                    value: insight.actionDepth,
+                    color: kOrange,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniImpactBar extends StatelessWidget {
+  final String label;
+  final double value;
+  final Color color;
+
+  const _MiniImpactBar({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final safe = value.clamp(0.0, 100.0);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          safe == 0 ? '—' : '${safe.round()}%',
+          style: GoogleFonts.inter(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: Stack(
+            children: [
+              Container(
+                height: 6,
+                color: Colors.white.withOpacity(0.065),
+              ),
+              FractionallySizedBox(
+                widthFactor: (safe / 100).clamp(0.0, 1.0),
+                child: Container(
+                  height: 6,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.inter(
+            color: kMuted,
+            fontSize: 9.5,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+}
 class _PreferenceFormationCard extends StatelessWidget {
   final _AnalyticsData data;
 
@@ -1975,6 +2610,246 @@ class _PreferenceColumn extends StatelessWidget {
               },
             ),
           ),
+      ],
+    );
+  }
+}
+
+class _CrossDomainTasteCard extends StatelessWidget {
+  final _AnalyticsData data;
+
+  const _CrossDomainTasteCard({
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final domains = data.domainGenres.entries
+        .where((entry) => entry.value.isNotEmpty)
+        .toList();
+
+    return _Panel(
+      height: 355,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardHeader(
+            title: 'Cross-domain taste contrast',
+            trailing: 'genre behavior',
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Shows whether the same genre behaves differently across movies, shows, books, and games.',
+            style: GoogleFonts.inter(
+              color: kMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: domains.isEmpty
+                ? const _MiniEmpty(text: 'Add items across multiple domains to compare taste patterns.')
+                : Row(
+                    children: [
+                      Expanded(
+                        flex: 56,
+                        child: _DomainGenreMatrix(
+                          domainGenres: data.domainGenres,
+                        ),
+                      ),
+                      const SizedBox(width: 18),
+                      Expanded(
+                        flex: 44,
+                        child: _TasteContrastList(
+                          contrasts: data.tasteContrasts,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DomainGenreMatrix extends StatelessWidget {
+  final Map<String, Map<String, int>> domainGenres;
+
+  const _DomainGenreMatrix({
+    required this.domainGenres,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final orderedDomains = ['movies', 'shows', 'books', 'games']
+        .where((domain) => (domainGenres[domain] ?? {}).isNotEmpty)
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: orderedDomains.map((domain) {
+        final entries = _sortedMap(domainGenres[domain] ?? <String, int>{})
+            .take(3)
+            .toList();
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 13),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: _domainColor(domain).withOpacity(0.13),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _domainColor(domain).withOpacity(0.16),
+                  ),
+                ),
+                child: Icon(
+                  _domainIcon(domain),
+                  color: _domainColor(domain),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 76,
+                child: Text(
+                  _prettyDomain(domain),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: entries.map((entry) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _domainColor(domain).withOpacity(0.105),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: _domainColor(domain).withOpacity(0.13),
+                        ),
+                      ),
+                      child: Text(
+                        '${entry.key} · ${entry.value}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: Colors.white.withOpacity(0.78),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _TasteContrastList extends StatelessWidget {
+  final List<_TasteContrast> contrasts;
+
+  const _TasteContrastList({
+    required this.contrasts,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (contrasts.isEmpty) {
+      return const _MiniEmpty(
+        text: 'No clear contrast yet. Add more items with shared genres across different domains.',
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Detected contrasts',
+          style: GoogleFonts.inter(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: ListView.builder(
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: min(contrasts.length, 4),
+            itemBuilder: (context, index) {
+              final contrast = contrasts[index];
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Container(
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.035),
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.055),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 31,
+                        height: 31,
+                        decoration: BoxDecoration(
+                          color: _domainColor(contrast.strongDomain).withOpacity(0.13),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Icon(
+                          _domainIcon(contrast.strongDomain),
+                          color: _domainColor(contrast.strongDomain),
+                          size: 16,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '${contrast.genre} is stronger in ${_prettyDomain(contrast.strongDomain)} than ${_prettyDomain(contrast.weakDomain)}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            color: Colors.white.withOpacity(0.78),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            height: 1.28,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
       ],
     );
   }
@@ -2269,6 +3144,7 @@ String _shortDate(DateTime date) {
 
   return '${months[date.month - 1]} ${date.day}';
 }
+
 class _TinyPill extends StatelessWidget {
   final String text;
   final Color color;
@@ -2398,6 +3274,87 @@ class _MiniEmpty extends StatelessWidget {
     );
   }
 }
+class _AnalyticsError extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _AnalyticsError({
+    required this.message,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        const Positioned.fill(child: _DashboardBackground()),
+        Center(
+          child: Container(
+            width: min(MediaQuery.of(context).size.width - 36, 460),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: kAnalyticsPanel.withOpacity(0.96),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: Colors.white.withOpacity(0.08)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.error_outline_rounded,
+                  color: kCoral,
+                  size: 34,
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Analytics could not load',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    color: kMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                InkWell(
+                  onTap: onRetry,
+                  borderRadius: BorderRadius.circular(999),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                    decoration: BoxDecoration(
+                      color: kOrange,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'Try again',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _HeatmapPainter extends CustomPainter {
   final List<int> values;
 
@@ -2474,100 +3431,111 @@ class _LineChartPainter extends CustomPainter {
     const left = 34.0;
     const right = 12.0;
     const top = 8.0;
-    const bottom = 24.0;
+    const bottom = 26.0;
 
-    final chart = Rect.fromLTWH(
-      left,
-      top,
-      size.width - left - right,
-      size.height - top - bottom,
-    );
+    final chartWidth = size.width - left - right;
+    final chartHeight = size.height - top - bottom;
 
     final gridPaint = Paint()
-      ..color = Colors.white.withOpacity(0.07)
+      ..color = Colors.white.withOpacity(0.055)
       ..strokeWidth = 1;
 
     for (int i = 0; i <= 4; i++) {
-      final y = chart.top + chart.height * (i / 4);
+      final y = top + chartHeight * (i / 4);
       canvas.drawLine(
-        Offset(chart.left, y),
-        Offset(chart.right, y),
+        Offset(left, y),
+        Offset(size.width - right, y),
         gridPaint,
       );
     }
 
-    final primaryPath = Path();
-    final secondaryPath = Path();
-
-    for (int i = 0; i < points.length; i++) {
-      final x = chart.left + chart.width * (i / (points.length - 1));
-
-      final yPrimary = chart.bottom -
-          chart.height * (points[i].value / maxY).clamp(0.0, 1.0);
-
-      final ySecondary = chart.bottom -
-          chart.height * (points[i].secondary / maxY).clamp(0.0, 1.0);
-
-      if (i == 0) {
-        primaryPath.moveTo(x, yPrimary);
-        secondaryPath.moveTo(x, ySecondary);
-      } else {
-        primaryPath.lineTo(x, yPrimary);
-        secondaryPath.lineTo(x, ySecondary);
-      }
-
-      canvas.drawCircle(
-        Offset(x, yPrimary),
-        3.2,
-        Paint()..color = primaryColor,
-      );
-
-      final label = TextPainter(
-        text: TextSpan(
-          text: points[i].label,
-          style: GoogleFonts.inter(
-            color: kMuted,
-            fontSize: 9,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-      label.paint(
-        canvas,
-        Offset(x - label.width / 2, chart.bottom + 9),
-      );
+    List<Offset> buildPoints(double Function(_TrendPoint point) selector) {
+      return List.generate(points.length, (index) {
+        final x = left + chartWidth * (index / (points.length - 1));
+        final value = selector(points[index]).clamp(0.0, maxY);
+        final y = top + chartHeight - (value / maxY) * chartHeight;
+        return Offset(x, y);
+      });
     }
 
-    canvas.drawPath(
-      secondaryPath,
-      Paint()
-        ..color = secondaryColor.withOpacity(0.62)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.7,
+    void drawLine(List<Offset> offsets, Color color) {
+      final path = Path()..moveTo(offsets.first.dx, offsets.first.dy);
+
+      for (int i = 1; i < offsets.length; i++) {
+        final previous = offsets[i - 1];
+        final current = offsets[i];
+        final controlX = (previous.dx + current.dx) / 2;
+
+        path.cubicTo(
+          controlX,
+          previous.dy,
+          controlX,
+          current.dy,
+          current.dx,
+          current.dy,
+        );
+      }
+
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = color
+          ..strokeWidth = 3
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round,
+      );
+
+      for (final point in offsets) {
+        canvas.drawCircle(
+          point,
+          4,
+          Paint()..color = color,
+        );
+        canvas.drawCircle(
+          point,
+          7,
+          Paint()..color = color.withOpacity(0.12),
+        );
+      }
+    }
+
+    final primaryPoints = buildPoints((point) => point.value);
+    final secondaryPoints = buildPoints((point) => point.secondary);
+
+    drawLine(primaryPoints, primaryColor);
+    drawLine(secondaryPoints, secondaryColor);
+
+    final textPainter = TextPainter(
+      textDirection: TextDirection.ltr,
     );
 
-    canvas.drawPath(
-      primaryPath,
-      Paint()
-        ..shader = LinearGradient(
-          colors: [
-            primaryColor,
-            kCoral,
-          ],
-        ).createShader(chart)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.3
-        ..strokeCap = StrokeCap.round,
-    );
+    for (int i = 0; i < points.length; i++) {
+      final x = left + chartWidth * (i / (points.length - 1));
+      textPainter.text = TextSpan(
+        text: points[i].label,
+        style: GoogleFonts.inter(
+          color: kMuted,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+        ),
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(x - textPainter.width / 2, size.height - 14),
+      );
+    }
   }
 
   @override
   bool shouldRepaint(covariant _LineChartPainter oldDelegate) {
-    return oldDelegate.points != points || oldDelegate.maxY != maxY;
+    return oldDelegate.points != points ||
+        oldDelegate.primaryColor != primaryColor ||
+        oldDelegate.secondaryColor != secondaryColor ||
+        oldDelegate.maxY != maxY;
   }
 }
+
 class _AreaChartPainter extends CustomPainter {
   final List<_TrendPoint> points;
   final Color color;
@@ -2584,67 +3552,54 @@ class _AreaChartPainter extends CustomPainter {
     if (points.length < 2) return;
 
     const left = 30.0;
-    const right = 12.0;
+    const right = 10.0;
     const top = 10.0;
-    const bottom = 24.0;
+    const bottom = 28.0;
 
-    final chart = Rect.fromLTWH(
-      left,
-      top,
-      size.width - left - right,
-      size.height - top - bottom,
-    );
+    final chartWidth = size.width - left - right;
+    final chartHeight = size.height - top - bottom;
 
     final gridPaint = Paint()
-      ..color = Colors.white.withOpacity(0.065)
+      ..color = Colors.white.withOpacity(0.055)
       ..strokeWidth = 1;
 
     for (int i = 0; i <= 5; i++) {
-      final y = chart.top + chart.height * (i / 5);
+      final y = top + chartHeight * (i / 5);
       canvas.drawLine(
-        Offset(chart.left, y),
-        Offset(chart.right, y),
+        Offset(left, y),
+        Offset(size.width - right, y),
         gridPaint,
       );
     }
 
-    final linePath = Path();
-    final fillPath = Path();
+    final offsets = List.generate(points.length, (index) {
+      final x = left + chartWidth * (index / (points.length - 1));
+      final value = points[index].value.clamp(0.0, maxY);
+      final y = top + chartHeight - (value / maxY) * chartHeight;
+      return Offset(x, y);
+    });
 
-    for (int i = 0; i < points.length; i++) {
-      final x = chart.left + chart.width * (i / (points.length - 1));
-      final y = chart.bottom -
-          chart.height * (points[i].value / maxY).clamp(0.0, 1.0);
+    final path = Path()..moveTo(offsets.first.dx, offsets.first.dy);
 
-      if (i == 0) {
-        linePath.moveTo(x, y);
-        fillPath.moveTo(x, chart.bottom);
-        fillPath.lineTo(x, y);
-      } else {
-        linePath.lineTo(x, y);
-        fillPath.lineTo(x, y);
-      }
+    for (int i = 1; i < offsets.length; i++) {
+      final previous = offsets[i - 1];
+      final current = offsets[i];
+      final controlX = (previous.dx + current.dx) / 2;
 
-      final label = TextPainter(
-        text: TextSpan(
-          text: points[i].label,
-          style: GoogleFonts.inter(
-            color: kMuted,
-            fontSize: 9,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-      label.paint(
-        canvas,
-        Offset(x - label.width / 2, chart.bottom + 9),
+      path.cubicTo(
+        controlX,
+        previous.dy,
+        controlX,
+        current.dy,
+        current.dx,
+        current.dy,
       );
     }
 
-    fillPath.lineTo(chart.right, chart.bottom);
-    fillPath.close();
+    final fillPath = Path.from(path)
+      ..lineTo(offsets.last.dx, top + chartHeight)
+      ..lineTo(offsets.first.dx, top + chartHeight)
+      ..close();
 
     canvas.drawPath(
       fillPath,
@@ -2653,118 +3608,60 @@ class _AreaChartPainter extends CustomPainter {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            color.withOpacity(0.32),
+            color.withOpacity(0.22),
             color.withOpacity(0.02),
           ],
-        ).createShader(chart),
+        ).createShader(Rect.fromLTWH(0, top, size.width, chartHeight)),
     );
 
     canvas.drawPath(
-      linePath,
+      path,
       Paint()
         ..color = color
+        ..strokeWidth = 3
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.3
         ..strokeCap = StrokeCap.round,
     );
 
-    for (int i = 0; i < points.length; i++) {
-      final x = chart.left + chart.width * (i / (points.length - 1));
-      final y = chart.bottom -
-          chart.height * (points[i].value / maxY).clamp(0.0, 1.0);
-
+    for (final point in offsets) {
       canvas.drawCircle(
-        Offset(x, y),
-        3.1,
+        point,
+        4,
         Paint()..color = color,
+      );
+      canvas.drawCircle(
+        point,
+        7,
+        Paint()..color = color.withOpacity(0.12),
+      );
+    }
+
+    final textPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+    );
+
+    for (int i = 0; i < points.length; i++) {
+      final x = left + chartWidth * (i / (points.length - 1));
+      textPainter.text = TextSpan(
+        text: points[i].label,
+        style: GoogleFonts.inter(
+          color: kMuted,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+        ),
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(x - textPainter.width / 2, size.height - 14),
       );
     }
   }
 
   @override
   bool shouldRepaint(covariant _AreaChartPainter oldDelegate) {
-    return oldDelegate.points != points || oldDelegate.maxY != maxY;
-  }
-}
-
-class _AnalyticsError extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-
-  const _AnalyticsError({
-    required this.message,
-    required this.onRetry,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: kAnalyticsBg,
-      body: Center(
-        child: Container(
-          margin: const EdgeInsets.all(22),
-          padding: const EdgeInsets.all(22),
-          constraints: const BoxConstraints(maxWidth: 430),
-          decoration: BoxDecoration(
-            color: kAnalyticsPanel,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: Colors.white.withOpacity(0.07)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.error_outline_rounded,
-                color: kOrange,
-                size: 34,
-              ),
-              const SizedBox(height: 14),
-              Text(
-                'Could not load analytics',
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  color: kMuted,
-                  fontSize: 12,
-                  height: 1.45,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 18),
-              InkWell(
-                onTap: onRetry,
-                borderRadius: BorderRadius.circular(999),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 11,
-                  ),
-                  decoration: BoxDecoration(
-                    color: kOrange,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    'Try again',
-                    style: GoogleFonts.inter(
-                      color: Colors.black,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return oldDelegate.points != points ||
+        oldDelegate.color != color ||
+        oldDelegate.maxY != maxY;
   }
 }
