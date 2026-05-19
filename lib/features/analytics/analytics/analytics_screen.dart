@@ -535,11 +535,14 @@ String strongestBy(double Function(_SourceInsight source) selector) {
   final sorted = List<_SourceInsight>.from(sourceInsights)
     ..sort((a, b) => selector(b).compareTo(selector(a)));
 
-  if (sorted.isEmpty) {
-    return 'No source yet';
+  final best = sorted.first;
+  final bestValue = selector(best);
+
+  if (bestValue <= 0) {
+    return 'No signal yet';
   }
 
-  return sorted.first.label;
+  return best.label;
 }
 
     logs.sort((a, b) => b.date.compareTo(a.date));
@@ -596,6 +599,13 @@ class _SourceAccumulator {
 
   _SourceAccumulator(this.label);
 
+  double get uniqueCrossDomainRate {
+  if (items == 0) return 0.0;
+  if (domains.length <= 1) return 0.0;
+
+  return ((domains.length - 1) / 3) * 100;
+}
+
   _SourceInsight toInsight() {
     return _SourceInsight(
       label: label,
@@ -608,7 +618,7 @@ class _SourceAccumulator {
       uniqueDomains: domains.length,
       genreDiversity: items == 0 ? 0.0 : (genres.length / items) * 100,
       explorationRate: items == 0 ? 0.0 : (exploratoryGenreHits / items) * 100,
-      crossDomainRate: items == 0 ? 0.0 : (crossDomainHits / items) * 100,
+      crossDomainRate: uniqueCrossDomainRate,
       averageRating: ratedItems == 0 ? 0.0 : ratingTotal / ratedItems,
       actionDepth: items == 0
           ? 0.0
