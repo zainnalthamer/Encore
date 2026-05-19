@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:encore/features/analytics/analytics/analytics_screen.dart';
+import 'package:encore/features/auth/screens/login_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -87,6 +88,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (result == 'logout') {
       await _authService.logout();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
     }
   }
 
@@ -404,6 +410,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             ],
                           ),
+                          if (!isOwnProfile && currentUid != null) ...[
+                            const SizedBox(height: 18),
+                            _FollowButton(
+                              targetUid: profileUid,
+                              currentUid: currentUid,
+                              followers: followersList,
+                              socialService: _socialService,
+                            ),
+                          ],
                           const SizedBox(height: 20),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
