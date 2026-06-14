@@ -28,7 +28,7 @@ Powered by Groq and LLaMA 3.1.
 ## Screenshots
 
 ### Home
-![Home](assets/screenshots/discover.png)
+![Home](assets/screenshots/home.png)
 
 ### Discover
 ![Discover](assets/screenshots/discover.png)
